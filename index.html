@@ -102,11 +102,13 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
   <h1><span>HRS-T</span> Training Tracker</h1>
   <div class="spacer"></div>
   <select id="whoami">
-    <option value="training">Training Officer (Oy)</option>
-    <option value="purchasing">จัดซื้อ</option>
+    <option value="">— เลือก User —</option>
+    <option value="training_co">Training Co</option>
+    <option value="training_dsd">Training DSD</option>
     <option value="accounting">Accounting</option>
-    <option value="dsd">Training Officer (DSD)</option>
+    <option value="purchasing">Purchasing</option>
   </select>
+  <button class="btn btn-red" id="lockBtn" onclick="toggleLock()">ล็อก</button>
   <button class="btn btn-ghost" onclick="openSetup()">ตั้งค่า</button>
 </header>
 
@@ -255,24 +257,24 @@ function toast(t){const el=document.getElementById('toast');el.textContent=t;el.
 /* vendor: none | wait_docs | review | ok   → รอเอกสารจากเวนเดอร์ → พิจารณาเอกสาร → เสร็จสิ้น */
 const VTXT={none:'ไม่ต้องเปิด',wait_docs:'รอเอกสารจากเวนเดอร์',review:'พิจารณาเอกสาร',ok:'เสร็จสิ้น'};
 const PAYROUNDS=['','ทำจ่ายรอบกลางเดือน','ทำจ่ายรอบปลายเดือน','ทำจ่ายรอบพิเศษ (รอบเงินเดือน)'];
-const ROLES={training:'Training (Oy)',purchasing:'จัดซื้อ',accounting:'Accounting',dsd:'Training (DSD)'};
+const ROLES={training_co:'Training Co',training_dsd:'Training DSD',accounting:'Accounting',purchasing:'Purchasing'};
 const myRole=()=>ROLES[document.getElementById('whoami').value]||'';
 const CATS=['Public','Inhouse','Other'];
 const vendorDone=c=>c.vendor==='none'||c.vendor==='ok';
 /* steps: vendor → register → hbi → pr → email → payment → dsd */
 const STEPS=[
-  {k:'vendor', nm:'เปิดเวนเดอร์', who:'จัดซื้อ', type:'vendor'},
-  {k:'register', nm:'สมัครอบรม', who:'Training'},
-  {k:'hbi', nm:'อนุมัติใน HBI', who:'Training'},
-  {k:'pr', nm:'เปิด PR', who:'Training'},
-  {k:'email', nm:'ส่งอีเมลยืนยัน', who:'Training'},
+  {k:'vendor', nm:'เปิดเวนเดอร์', who:'Purchasing', type:'vendor'},
+  {k:'register', nm:'สมัครอบรม', who:'Training Co'},
+  {k:'hbi', nm:'อนุมัติใน HBI', who:'Training Co'},
+  {k:'pr', nm:'เปิด PR', who:'Training Co'},
+  {k:'email', nm:'ส่งอีเมลยืนยัน', who:'Training Co'},
   {k:'payment', nm:'ทำจ่าย', who:'Accounting'},
-  {k:'dsd', nm:'ยื่น DSD', who:'DSD'},
+  {k:'dsd', nm:'ยื่น DSD', who:'Training DSD'},
 ];
 const DOCS=[
-  {k:'invoice', nm:'Invoice', who:'Training'},
-  {k:'app', nm:'ใบสมัคร', who:'Training'},
-  {k:'detail', nm:'รายละเอียดหลักสูตร (DSD)', who:'Training'},
+  {k:'invoice', nm:'Invoice', who:'Training Co'},
+  {k:'app', nm:'ใบสมัคร', who:'Training Co'},
+  {k:'detail', nm:'รายละเอียดหลักสูตร (DSD)', who:'Training Co'},
   {k:'payproof', nm:'หลักฐานการชำระเงิน', who:'Accounting'},
 ];
 function stepState(c,k){
@@ -397,14 +399,16 @@ function closeDrawer(){document.getElementById('ov').classList.remove('open');do
 const cur=()=>data.courses.find(x=>x.id===currentId);
 
 async function setStep(k,v){
+  if(!requireRole()){openDrawer(currentId);return}
   const c=cur();c.steps[k]=v;
   c.stepTs[k]=v?new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'}):null;
   c.stepBy=c.stepBy||{};c.stepBy[k]=v?myRole():null;
   await saveData(`step ${k}=${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id);
 }
-async function setVendor(v){const c=cur();c.vendor=v;c.vendorBy=myRole();await saveData(`vendor ${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id)}
-async function editField(f,v){const c=cur();c[f]=v;await saveData(`edit ${f} : ${c.name}`);render()}
+async function setVendor(v){if(!requireRole()){openDrawer(currentId);return}const c=cur();c.vendor=v;c.vendorBy=myRole();await saveData(`vendor ${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id)}
+async function editField(f,v){if(!requireRole()){openDrawer(currentId);return}const c=cur();c[f]=v;await saveData(`edit ${f} : ${c.name}`);render()}
 async function delCourse(){
+  if(!requireRole())return;
   if(!confirm('ลบหลักสูตรนี้? (ไฟล์ PDF ใน repo จะยังอยู่)'))return;
   data.courses=data.courses.filter(x=>x.id!==currentId);
   await saveData('delete course');closeDrawer();render();
@@ -414,6 +418,7 @@ async function delCourse(){
 function openAdd(){document.getElementById('mAdd').classList.add('open')}
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 async function addCourse(){
+  if(!requireRole())return;
   const name=document.getElementById('aName').value.trim();
   if(!name){toast('กรอกชื่อหลักสูตร');return}
   const no=Math.max(0,...data.courses.map(c=>c.no))+1;
@@ -441,6 +446,7 @@ function docPath(c,k){
   return`docs/${String(c.no).padStart(2,'0')}_${safeName(c.name)}_${label}.pdf`;
 }
 function upDoc(k){
+  if(!requireRole())return;
   const inp=document.createElement('input');inp.type='file';inp.accept='application/pdf';
   inp.onchange=async()=>{
     const file=inp.files[0];if(!file)return;
@@ -588,6 +594,7 @@ function backupJSON(){
   toast('ดาวน์โหลดไฟล์สำรองแล้ว');
 }
 function importJSON(){
+  if(!requireRole())return;
   const inp=document.createElement('input');inp.type='file';inp.accept='.json';
   inp.onchange=async()=>{
     const f=inp.files[0];if(!f)return;
@@ -636,9 +643,39 @@ async function saveSetup(){
   await loadData(true);
 }
 
-/* ================= boot ================= */
-document.getElementById('whoami').value=localStorage.getItem('tt_role')||'training';
-document.getElementById('whoami').onchange=e=>localStorage.setItem('tt_role',e.target.value);
+/* ================= boot & role lock ================= */
+const roleSel=document.getElementById('whoami'), lockBtn=document.getElementById('lockBtn');
+const oldMap={training:'training_co',dsd:'training_dsd'};
+let savedRole=localStorage.getItem('tt_role')||'';
+savedRole=oldMap[savedRole]||savedRole;
+if(!ROLES[savedRole])savedRole='';
+roleSel.value=savedRole;
+let roleLocked=savedRole&&localStorage.getItem('tt_role_locked')==='1';
+function applyLock(){
+  roleSel.disabled=roleLocked;
+  lockBtn.textContent=roleLocked?'เปลี่ยน user':'ล็อก';
+  lockBtn.className=roleLocked?'btn btn-ghost':'btn btn-red';
+}
+function toggleLock(){
+  if(roleLocked){
+    if(!confirm('ปลดล็อกเพื่อเปลี่ยน user? การอัปเดตหลังจากนี้จะบันทึกในชื่อ user ใหม่'))return;
+    roleLocked=false;localStorage.setItem('tt_role_locked','0');
+  }else{
+    if(!roleSel.value){toast('เลือก user ก่อนกดล็อก');return}
+    if(!confirm(`ยืนยันใช้งานในชื่อ "${ROLES[roleSel.value]}" ?`))return;
+    roleLocked=true;localStorage.setItem('tt_role_locked','1');
+    localStorage.setItem('tt_role',roleSel.value);
+    toast('ล็อก user เป็น '+ROLES[roleSel.value]);
+  }
+  applyLock();
+}
+roleSel.onchange=e=>localStorage.setItem('tt_role',e.target.value);
+applyLock();
+function requireRole(){
+  if(roleLocked&&roleSel.value)return true;
+  toast('เลือก user มุมขวาบนแล้วกด "ล็อก" ก่อนอัปเดตข้อมูล');
+  return false;
+}
 loadData();
 </script>
 </body>
