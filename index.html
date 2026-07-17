@@ -34,6 +34,11 @@ main{max-width:1200px;margin:0 auto;padding:18px 20px 60px}
 .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
 #syncState{font-size:12px;color:var(--sub)}
 
+#cutoffBar{display:none;background:#FFF8E6;border:1px solid #F0D9A0;border-left:4px solid var(--wait);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.7}
+#cutoffBar.hot{background:#FDEDED;border-color:#F3B8B8;border-left-color:var(--alert)}
+#cutoffBar b{font-weight:500}
+#cutoffBar .cc{cursor:pointer;text-decoration:underline}
+
 table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden}
 th{font-size:11px;font-weight:500;color:var(--sub);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);background:#FCFCFC;white-space:nowrap}
 td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -121,6 +126,7 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
     <button class="btn btn-ghost" onclick="exportCSV()">Excel</button>
     <span id="syncState"></span>
   </div>
+  <div id="cutoffBar"></div>
   <table>
     <thead><tr>
       <th>#</th><th>หลักสูตร / สถาบัน</th><th>วันอบรม</th><th>คน</th>
@@ -309,18 +315,62 @@ function isLate(c){
   return false;
 }
 
+/* ================= cut off ทำจ่าย (7 = กลางเดือน, 21 = ปลายเดือน) ================= */
+function nextCutoff(day){
+  const now=new Date(); now.setHours(0,0,0,0);
+  let d=new Date(now.getFullYear(),now.getMonth(),day);
+  if(d<now)d=new Date(now.getFullYear(),now.getMonth()+1,day);
+  return d;
+}
+const fmtDM=d=>`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+const daysTo=d=>Math.round((d-new Date().setHours(0,0,0,0))/864e5);
+function payMissing(c){
+  // เอกสารที่ Training Co ต้องเตรียมให้ทันรอบทำจ่าย
+  const m=[];
+  if(!c.steps.pr)m.push('เปิด PR');
+  if(!c.docs.invoice)m.push('Invoice');
+  return m;
+}
+function cutoffInfo(c){
+  if(c.steps.payment)return null;                       // จ่ายแล้ว ไม่ต้องเตือน
+  const miss=payMissing(c);
+  if(!miss.length)return null;                          // เอกสารครบแล้ว รอบัญชีจ่าย
+  let day=null;
+  if((c.payRound||'').includes('กลางเดือน'))day=7;
+  else if((c.payRound||'').includes('ปลายเดือน'))day=21;
+  const target=day?nextCutoff(day):(daysTo(nextCutoff(7))<=daysTo(nextCutoff(21))?nextCutoff(7):nextCutoff(21));
+  return{target,days:daysTo(target),miss,fixed:!!day};
+}
+function renderCutoffBar(){
+  const bar=document.getElementById('cutoffBar');
+  const items=data.courses.map(c=>({c,i:cutoffInfo(c)})).filter(x=>x.i&&x.i.days<=7)
+    .sort((a,b)=>a.i.days-b.i.days);
+  const c7=nextCutoff(7),c21=nextCutoff(21);
+  if(!items.length){bar.style.display='none';return}
+  const hot=items.some(x=>x.i.days<=3);
+  bar.className=hot?'hot':'';
+  bar.style.display='block';
+  const list=items.map(x=>
+    `<span class="cc" onclick="openDrawer('${x.c.id}')">#${x.c.no} ${esc(x.c.name.slice(0,40))}</span>
+     — ขาด ${x.i.miss.join(' + ')} (cut off ${fmtDM(x.i.target)}${x.i.fixed?'':' โดยประมาณ'} · เหลือ ${x.i.days} วัน)`
+  ).join('<br>');
+  bar.innerHTML=`<b> เร่งเอกสารก่อน cut off</b> — กลางเดือนตัดวันที่ 7 (${fmtDM(c7)}) · ปลายเดือนตัดวันที่ 21 (${fmtDM(c21)})<br>${list}`;
+}
+
 /* ================= render ================= */
 function dateRange(c){
   const f=s=>{if(!s)return'';const[y,m,d]=s.split('-');return`${d}/${m}/${(+y+543).toString().slice(2)}`};
   return c.start===c.end?f(c.start):f(c.start)+' – '+f(c.end);
 }
 function render(){
+  renderCutoffBar();
   const tb=document.getElementById('rows');
   tb.innerHTML='';
   const cs=[...data.courses].sort((a,b)=>(a.start||'').localeCompare(b.start||''));
-  if(!cs.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--sub);text-align:center;padding:30px">ยังไม่มีหลักสูตร — กด "+ เพิ่มหลักสูตร" เพื่อเริ่ม</td></tr>';return}
+  if(!cs.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--sub);text-align:center;padding:30px">ยังไม่มีรายการ — กด "+ เพิ่มรายการ" เพื่อเริ่ม</td></tr>';return}
   for(const c of cs){
-    const st=lastStatus(c), late=isLate(c);
+    const st=lastStatus(c), late=isLate(c), co=cutoffInfo(c);
+    const coChip=co&&co.days<=7?`<br><span class="chip ${co.days<=3?'alert':'wait'}" style="margin-top:3px"> cut off ${fmtDM(co.target)} · ขาด ${co.miss.join('+')}</span>`:'';
     const dots=STEPS.map(s=>{
       const v=stepState(c,s.k);
       const cl=s.k==='vendor'?(vendorDone(c)?'ok':'wait'):(v==='ok'?'ok':v==='wait'?'wait':'');
@@ -332,7 +382,7 @@ function render(){
       <td class="cname">${esc(c.name)} <span class="chip" style="font-size:10px">${esc(c.cat||'')}</span><br><span style="font-size:11.5px;color:var(--sub)">${esc(c.vendorName||'')}</span></td>
       <td class="cdate">${dateRange(c)}</td><td>${c.count||''}</td>
       <td><div class="dots">${dots}</div></td>
-      <td><span class="chip ${late?'alert':st.cl}">${late?'⚠ เสี่ยงหลุด — ':''}${st.t}</span></td>`;
+      <td><span class="chip ${late?'alert':st.cl}">${late?'⚠ เสี่ยง — ':''}${st.t}</span>${coChip}</td>`;
     tr.onclick=()=>openDrawer(c.id);
     tb.appendChild(tr);
   }
@@ -479,14 +529,14 @@ async function dlDoc(k){
 }
 
 /* ================= email templates ================= */
-const SIG=`Ms. Nobsamon Thadtapong (Oy) | นบศมน ถัดทะพงษ์ (ออย)
+const SIG=`
 People Center Department
 HR Service Excellent (HRSX)
 Asian Honda Motor Co., Ltd.
 14 Sarasin Building, Surasak Rd.,
 Silom, Bangrak, Bangkok 10500
-Tel.  (+66) 63-191-0261
-E-Mail : nobsatha@honda.th.com`;
+Tel.  (+66) 
+E-Mail : `;
 
 function openEmail(){
   const c=cur();
@@ -502,9 +552,9 @@ function setLang(l){
   lang=l;
   document.querySelectorAll('#langTabs button').forEach(b=>b.classList.toggle('on',b.dataset.l===l));
   const def={
-    th:'หากรับทราบรายละเอียดแล้ว ออยรบกวนกดยืนยันการเข้าร่วมอบรม ตามอีเมลด้านล่างนี้ด้วยนะคะ',
-    jp:'なお、受講確認、およびお支払い予定日のご連絡につきましては、弊社にて対応いたしますので、ご対応いただく必要はございません。\nまた、持ち物について特に指定はございませんが、ノートや筆記用具をご持参いただければ結構です。',
-    en:'Once you have acknowledged the details, please kindly confirm your attendance by replying to this email.'
+    th:'หากรับทราบรายละเอียดแล้ว รบกวนตอบกลับอีเมลนี้ด้วยนะคะ',
+    jp:'内容をご確認いただけましたら、本メールへご返信いただけますと幸いです。',
+    en:'Once you have reviewed the details, please kindly reply to this email.'
   };
   document.getElementById('eRemark').value=def[l];
   genEmail();
@@ -613,7 +663,7 @@ function exportCSV(){
   // ponytail: CSV UTF-8 BOM เปิดใน Excel ได้ตรงๆ ไม่ต้องพึ่งไลบรารี xlsx
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
   const head=['ลำดับ','หลักสูตร','ประเภท','สถาบัน','วันที่เริ่ม','วันที่สิ้นสุด','จำนวนคน','ผู้เข้าอบรม',
-    'เวนเดอร์','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','รอบทำจ่าย','Remark ทำจ่าย','ยื่น DSD','สถานะล่าสุด',
+    'Vendor','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','รอบทำจ่าย','Remark ทำจ่าย','ยื่น DSD','สถานะล่าสุด',
     'Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน'];
   const stepCell=(c,k)=>c.steps[k]?`${c.stepTs[k]||'✓'}${(c.stepBy||{})[k]?' ('+c.stepBy[k]+')':''}`:'';
   const rows=[...data.courses].sort((a,b)=>a.no-b.no).map(c=>[
