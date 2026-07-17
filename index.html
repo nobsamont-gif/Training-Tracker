@@ -34,10 +34,26 @@ main{max-width:1200px;margin:0 auto;padding:18px 20px 60px}
 .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
 #syncState{font-size:12px;color:var(--sub)}
 
-#cutoffBar{display:none;background:#FFF8E6;border:1px solid #F0D9A0;border-left:4px solid var(--wait);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.7}
-#cutoffBar.hot{background:#FDEDED;border-color:#F3B8B8;border-left-color:var(--alert)}
-#cutoffBar b{font-weight:500}
-#cutoffBar .cc{cursor:pointer;text-decoration:underline}
+/* notification center (iOS style) */
+#bellWrap{position:relative}
+#bellBtn{width:36px;height:36px;border:1px solid var(--line);border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:16px}
+#bellBtn:hover{border-color:var(--sub)}
+#bellBadge{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--alert);color:#fff;font-size:10.5px;font-weight:500;display:none;align-items:center;justify-content:center;border:2px solid #fff}
+#notifPanel{position:absolute;top:44px;right:0;width:360px;max-height:70vh;overflow-y:auto;background:rgba(255,255,255,.97);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.16);display:none;z-index:40}
+#notifPanel.open{display:block}
+.np-head{padding:13px 16px 9px;font-size:13px;font-weight:600;color:var(--ink)}
+.np-empty{padding:26px 16px;text-align:center;color:var(--sub);font-size:12.5px}
+.np-item{display:flex;gap:10px;padding:10px 16px;cursor:pointer;align-items:flex-start}
+.np-item:hover{background:#F5F5F7}
+.np-item+.np-item{border-top:1px solid #F0F0F2}
+.np-ico{width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0}
+.np-ico.warn{background:var(--wait)}
+.np-ico.hot{background:var(--alert)}
+.np-txt{flex:1;min-width:0}
+.np-t1{font-size:12.5px;font-weight:500;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.np-t2{font-size:11.5px;color:var(--sub);line-height:1.45}
+.np-when{font-size:11px;color:var(--sub);white-space:nowrap;margin-top:2px}
+.np-sect{padding:9px 16px 4px;font-size:10.5px;font-weight:500;color:var(--sub);text-transform:uppercase;letter-spacing:.05em}
 
 table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden}
 th{font-size:11px;font-weight:500;color:var(--sub);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);background:#FCFCFC;white-space:nowrap}
@@ -106,6 +122,11 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
 <header>
   <h1><span>HRS-T</span> Training Tracker</h1>
   <div class="spacer"></div>
+  <div id="bellWrap">
+    <button id="bellBtn" onclick="toggleNotif(event)" title="การแจ้งเตือน">&#128276;</button>
+    <span id="bellBadge"></span>
+    <div id="notifPanel"></div>
+  </div>
   <select id="whoami">
     <option value="">— เลือก User —</option>
     <option value="training_co">Training Co</option>
@@ -119,14 +140,13 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
 
 <main>
   <div class="toolbar">
-    <button class="btn btn-red" onclick="openAdd()">+ เพิ่มหลักสูตร</button>
+    <button class="btn btn-red" onclick="openAdd()">+ เพิ่มรายการ</button>
     <button class="btn btn-ghost" onclick="loadData(true)">รีเฟรช</button>
     <button class="btn btn-ghost" onclick="backupJSON()">สำรองข้อมูล</button>
     <button class="btn btn-ghost" onclick="importJSON()">นำเข้าข้อมูล</button>
     <button class="btn btn-ghost" onclick="exportCSV()">Excel</button>
     <span id="syncState"></span>
   </div>
-  <div id="cutoffBar"></div>
   <table>
     <thead><tr>
       <th>#</th><th>หลักสูตร / สถาบัน</th><th>วันอบรม</th><th>คน</th>
@@ -142,9 +162,9 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
 
 <!-- add course -->
 <div class="modal" id="mAdd"><div class="mcard">
-  <h2><span>เพิ่ม</span>หลักสูตร</h2>
+  <h2><span>เพิ่ม</span>รายการ</h2>
   <div class="frow"><label>ชื่อหลักสูตร</label><input id="aName"></div>
-  <div class="frow"><label>สถาบัน / เวนเดอร์</label><input id="aVendor"></div>
+  <div class="frow"><label>สถาบัน / Vendor</label><input id="aVendor"></div>
   <div class="grid2">
     <div class="frow"><label>วันที่เริ่ม</label><input id="aStart" type="date"></div>
     <div class="frow"><label>วันที่สิ้นสุด</label><input id="aEnd" type="date"></div>
@@ -155,8 +175,8 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
       <select id="aCat"><option>Public</option><option>Inhouse</option><option>Other</option></select>
     </div>
   </div>
-  <div class="frow"><label>สถานะเวนเดอร์เริ่มต้น</label>
-      <select id="aVstat"><option value="none">มีเวนเดอร์อยู่แล้ว</option><option value="wait_docs">ต้องขอเปิดเวนเดอร์</option></select>
+  <div class="frow"><label>สถานะ Vendor เริ่มต้น</label>
+      <select id="aVstat"><option value="none">มี Vendor อยู่แล้ว</option><option value="wait_docs">ต้องขอเปิด Vendor</option></select>
   </div>
   <div class="frow"><label>รายชื่อผู้เข้าอบรม (บรรทัดละคน)</label><textarea id="aPeople" rows="3"></textarea></div>
   <div class="mfoot">
@@ -260,8 +280,8 @@ const sync=t=>document.getElementById('syncState').textContent=t;
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',2600)}
 
 /* ================= model ================= */
-/* vendor: none | wait_docs | review | ok   → รอเอกสารจากเวนเดอร์ → พิจารณาเอกสาร → เสร็จสิ้น */
-const VTXT={none:'ไม่ต้องเปิด',wait_docs:'รอเอกสารจากเวนเดอร์',review:'พิจารณาเอกสาร',ok:'เสร็จสิ้น'};
+/* vendor: none | wait_docs | review | ok   → รอเอกสารจาก Vendor → พิจารณาเอกสาร → เสร็จสิ้น */
+const VTXT={none:'ไม่ต้องเปิด',wait_docs:'รอเอกสารจาก Vendor',review:'พิจารณาเอกสาร',ok:'เสร็จสิ้น'};
 const PAYROUNDS=['','ทำจ่ายรอบกลางเดือน','ทำจ่ายรอบปลายเดือน','ทำจ่ายรอบพิเศษ (รอบเงินเดือน)'];
 const ROLES={training_co:'Training Co',training_dsd:'Training DSD',accounting:'Accounting',purchasing:'Purchasing'};
 const myRole=()=>ROLES[document.getElementById('whoami').value]||'';
@@ -269,7 +289,7 @@ const CATS=['Public','Inhouse','Other'];
 const vendorDone=c=>c.vendor==='none'||c.vendor==='ok';
 /* steps: vendor → register → hbi → pr → email → payment → dsd */
 const STEPS=[
-  {k:'vendor', nm:'เปิดเวนเดอร์', who:'Purchasing', type:'vendor'},
+  {k:'vendor', nm:'เปิด Vendor', who:'Purchasing', type:'vendor'},
   {k:'register', nm:'สมัครอบรม', who:'Training Co'},
   {k:'hbi', nm:'อนุมัติใน HBI', who:'Training Co'},
   {k:'pr', nm:'เปิด PR', who:'Training Co'},
@@ -298,7 +318,7 @@ function lastStatus(c){
   if(c.steps.dsd)return{t:'เสร็จสิ้น',cl:'ok'};
   // first not-done step = current waiting point
   for(const s of STEPS){
-    if(s.k==='vendor'){if(!vendorDone(c))return{t:VTXT[c.vendor]||'รอเปิดเวนเดอร์',cl:'wait'};continue}
+    if(s.k==='vendor'){if(!vendorDone(c))return{t:VTXT[c.vendor]||'รอเปิด Vendor',cl:'wait'};continue}
     if(!c.steps[s.k]){
       if(s.k==='payment'&&c.payRound)return{t:'รอ'+c.payRound.replace('ทำจ่าย','ทำจ่าย '),cl:'wait'};
       return{t:'รอ'+s.nm,cl:'wait'};
@@ -341,21 +361,38 @@ function cutoffInfo(c){
   const target=day?nextCutoff(day):(daysTo(nextCutoff(7))<=daysTo(nextCutoff(21))?nextCutoff(7):nextCutoff(21));
   return{target,days:daysTo(target),miss,fixed:!!day};
 }
-function renderCutoffBar(){
-  const bar=document.getElementById('cutoffBar');
-  const items=data.courses.map(c=>({c,i:cutoffInfo(c)})).filter(x=>x.i&&x.i.days<=7)
-    .sort((a,b)=>a.i.days-b.i.days);
-  const c7=nextCutoff(7),c21=nextCutoff(21);
-  if(!items.length){bar.style.display='none';return}
-  const hot=items.some(x=>x.i.days<=3);
-  bar.className=hot?'hot':'';
-  bar.style.display='block';
-  const list=items.map(x=>
-    `<span class="cc" onclick="openDrawer('${x.c.id}')">#${x.c.no} ${esc(x.c.name.slice(0,40))}</span>
-     — ขาด ${x.i.miss.join(' + ')} (cut off ${fmtDM(x.i.target)}${x.i.fixed?'':' โดยประมาณ'} · เหลือ ${x.i.days} วัน)`
-  ).join('<br>');
-  bar.innerHTML=`<b> เร่งเอกสารก่อน cut off</b> — กลางเดือนตัดวันที่ 7 (${fmtDM(c7)}) · ปลายเดือนตัดวันที่ 21 (${fmtDM(c21)})<br>${list}`;
+function notifItems(){
+  const out=[];
+  for(const c of data.courses){
+    const i=cutoffInfo(c);
+    if(i&&i.days<=7)out.push({c,kind:'cutoff',hot:i.days<=3,
+      t1:`#${c.no} ${c.name}`,t2:`ขาด ${i.miss.join(' + ')} · cut off ${fmtDM(i.target)}${i.fixed?'':' (ประมาณ)'}`,
+      when:i.days<=0?'วันนี้':`${i.days} วัน`,order:i.days});
+    if(isLate(c))out.push({c,kind:'late',hot:true,
+      t1:`#${c.no} ${c.name}`,t2:!c.steps.email&&c.start?'ใกล้วันอบรมแต่ยังไม่ส่งอีเมลยืนยัน':'อบรมจบแล้วแต่ยังไม่ทำจ่าย',
+      when:'',order:-1});
+  }
+  return out.sort((a,b)=>a.order-b.order);
 }
+function renderNotif(){
+  const items=notifItems();
+  const badge=document.getElementById('bellBadge');
+  badge.style.display=items.length?'flex':'none';
+  badge.textContent=items.length;
+  const p=document.getElementById('notifPanel');
+  if(!items.length){p.innerHTML='<div class="np-head">การแจ้งเตือน</div><div class="np-empty">ไม่มีรายการต้องเร่ง</div>';return}
+  const late=items.filter(x=>x.kind==='late'),cut=items.filter(x=>x.kind==='cutoff');
+  const row=x=>`<div class="np-item" onclick="closeNotif();openDrawer('${x.c.id}')">
+    <span class="np-ico ${x.hot?'hot':'warn'}"></span>
+    <span class="np-txt"><span class="np-t1">${esc(x.t1)}</span><span class="np-t2">${esc(x.t2)}</span></span>
+    <span class="np-when">${x.when}</span></div>`;
+  p.innerHTML='<div class="np-head">การแจ้งเตือน</div>'
+    +(late.length?'<div class="np-sect">เสี่ยงหลุด</div>'+late.map(row).join(''):'')
+    +(cut.length?'<div class="np-sect">Cut off ทำจ่าย — กลางเดือนวันที่ 7 · ปลายเดือนวันที่ 21</div>'+cut.map(row).join(''):'');
+}
+function toggleNotif(e){e.stopPropagation();document.getElementById('notifPanel').classList.toggle('open')}
+function closeNotif(){document.getElementById('notifPanel').classList.remove('open')}
+document.addEventListener('click',e=>{if(!e.target.closest('#bellWrap'))closeNotif()});
 
 /* ================= render ================= */
 function dateRange(c){
@@ -363,14 +400,14 @@ function dateRange(c){
   return c.start===c.end?f(c.start):f(c.start)+' – '+f(c.end);
 }
 function render(){
-  renderCutoffBar();
+  renderNotif();
   const tb=document.getElementById('rows');
   tb.innerHTML='';
   const cs=[...data.courses].sort((a,b)=>(a.start||'').localeCompare(b.start||''));
   if(!cs.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--sub);text-align:center;padding:30px">ยังไม่มีรายการ — กด "+ เพิ่มรายการ" เพื่อเริ่ม</td></tr>';return}
   for(const c of cs){
     const st=lastStatus(c), late=isLate(c), co=cutoffInfo(c);
-    const coChip=co&&co.days<=7?`<br><span class="chip ${co.days<=3?'alert':'wait'}" style="margin-top:3px"> cut off ${fmtDM(co.target)} · ขาด ${co.miss.join('+')}</span>`:'';
+    const coChip=co&&co.days<=7?`<br><span class="chip ${co.days<=3?'alert':'wait'}" style="margin-top:3px">cut off ${fmtDM(co.target)} · ขาด ${co.miss.join('+')}</span>`:'';
     const dots=STEPS.map(s=>{
       const v=stepState(c,s.k);
       const cl=s.k==='vendor'?(vendorDone(c)?'ok':'wait'):(v==='ok'?'ok':v==='wait'?'wait':'');
@@ -428,7 +465,7 @@ function openDrawer(id){
     <div class="dbody">
       <div class="sect"><h3>ข้อมูลหลักสูตร</h3>
         <div class="grid2">
-          <div class="frow"><label>สถาบัน / เวนเดอร์</label><input value="${esc(c.vendorName||'')}" onchange="editField('vendorName',this.value)"></div>
+          <div class="frow"><label>สถาบัน / Vendor</label><input value="${esc(c.vendorName||'')}" onchange="editField('vendorName',this.value)"></div>
           <div class="frow"><label>ประเภท</label>
             <select onchange="editField('cat',this.value)">${CATS.map(x=>`<option ${c.cat===x?'selected':''}>${x}</option>`).join('')}</select>
           </div>
@@ -480,7 +517,7 @@ async function addCourse(){
     count:+document.getElementById('aCount').value||1,
     cat:document.getElementById('aCat').value,
     people:document.getElementById('aPeople').value.trim(),
-    vendor:document.getElementById('aVstat').value,   // none|wait|ok
+    vendor:document.getElementById('aVstat').value,
     steps:{}, stepTs:{}, docs:{}
   });
   await saveData('add course: '+name);
@@ -529,14 +566,14 @@ async function dlDoc(k){
 }
 
 /* ================= email templates ================= */
-const SIG=`
+const SIG=`Ms. Nobsamon Thadtapong (Oy) | นบศมน ถัดทะพงษ์ (ออย)
 People Center Department
 HR Service Excellent (HRSX)
 Asian Honda Motor Co., Ltd.
 14 Sarasin Building, Surasak Rd.,
 Silom, Bangrak, Bangkok 10500
-Tel.  (+66) 
-E-Mail : `;
+Tel.  (+66) 63-191-0261
+E-Mail : nobsatha@honda.th.com`;
 
 function openEmail(){
   const c=cur();
@@ -553,8 +590,8 @@ function setLang(l){
   document.querySelectorAll('#langTabs button').forEach(b=>b.classList.toggle('on',b.dataset.l===l));
   const def={
     th:'หากรับทราบรายละเอียดแล้ว รบกวนตอบกลับอีเมลนี้ด้วยนะคะ',
-    jp:'内容をご確認いただけましたら、本メールへご返信いただけますと幸いです。',
-    en:'Once you have reviewed the details, please kindly reply to this email.'
+    jp:'内容をご確認のうえ、本メールへご返信いただけますようお願いいたします。',
+    en:'Once you have acknowledged the details, please kindly reply to this email.'
   };
   document.getElementById('eRemark').value=def[l];
   genEmail();
