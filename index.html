@@ -114,6 +114,9 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
   <div class="toolbar">
     <button class="btn btn-red" onclick="openAdd()">+ เพิ่มหลักสูตร</button>
     <button class="btn btn-ghost" onclick="loadData(true)">รีเฟรช</button>
+    <button class="btn btn-ghost" onclick="backupJSON()">สำรองข้อมูล</button>
+    <button class="btn btn-ghost" onclick="importJSON()">นำเข้าข้อมูล</button>
+    <button class="btn btn-ghost" onclick="exportCSV()">Excel</button>
     <span id="syncState"></span>
   </div>
   <table>
@@ -545,6 +548,50 @@ async function copyEmail(){
   await navigator.clipboard.writeText(document.getElementById('emailOut').value);
   const c=cur();if(c){c._to=document.getElementById('eTo').value;c._venue=document.getElementById('eVenue').value}
   toast('คัดลอกแล้ว');
+}
+
+/* ================= backup / restore / excel ================= */
+function dlBlob(blob,fn){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=fn;a.click();
+  URL.revokeObjectURL(url);
+}
+const stamp=()=>new Date().toISOString().slice(0,10);
+function backupJSON(){
+  dlBlob(new Blob([JSON.stringify(data,null,1)],{type:'application/json'}),`training-backup_${stamp()}.json`);
+  toast('ดาวน์โหลดไฟล์สำรองแล้ว');
+}
+function importJSON(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.json';
+  inp.onchange=async()=>{
+    const f=inp.files[0];if(!f)return;
+    try{
+      const d=JSON.parse(await f.text());
+      if(!Array.isArray(d.courses))throw new Error('bad format');
+      if(!confirm(`นำเข้า ${d.courses.length} หลักสูตร แทนที่ข้อมูลปัจจุบันทั้งหมด?`))return;
+      data=d;
+      await saveData('restore from backup');
+      render();toast('นำเข้าข้อมูลสำเร็จ');
+    }catch(e){toast('ไฟล์ไม่ถูกต้อง — ต้องเป็นไฟล์สำรองจากปุ่ม "สำรองข้อมูล"');console.error(e)}
+  };
+  inp.click();
+}
+function exportCSV(){
+  // ponytail: CSV UTF-8 BOM เปิดใน Excel ได้ตรงๆ ไม่ต้องพึ่งไลบรารี xlsx
+  const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
+  const head=['ลำดับ','หลักสูตร','สถาบัน','วันที่เริ่ม','วันที่สิ้นสุด','จำนวนคน','ผู้เข้าอบรม',
+    'เวนเดอร์','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','ยื่น DSD','สถานะล่าสุด',
+    'Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน'];
+  const vtxt={none:'ไม่ต้องเปิด',wait:'รอเปิด',ok:'เปิดแล้ว'};
+  const rows=[...data.courses].sort((a,b)=>a.no-b.no).map(c=>[
+    c.no,c.name,c.vendorName,c.start,c.end,c.count,(c.people||'').split('\n').filter(Boolean).join('; '),
+    vtxt[c.vendor]||'',...['register','hbi','pr','email','payment','dsd'].map(k=>c.steps[k]?(c.stepTs[k]||'✓'):''),
+    lastStatus(c).t,
+    c.docs.invoice||'',c.docs.app||'',c.docs.detail||'',c.docs.payproof||''
+  ].map(q).join(','));
+  const csv='\uFEFF'+head.map(q).join(',')+'\n'+rows.join('\n');
+  dlBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),`training-tracker_${stamp()}.csv`);
+  toast('ส่งออก Excel (CSV) แล้ว');
 }
 
 /* ================= setup ================= */
