@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HRS-T Training Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --red:#CC0000; --red-dark:#A30000; --ink:#1A1A1A; --sub:#6B6B6B;
+  --line:#E4E4E4; --bg:#F7F7F7; --card:#FFFFFF;
+  --ok:#1E8E3E; --wait:#B26A00; --none:#9AA0A6; --alert:#D93025;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Prompt',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;font-weight:300}
+button{font-family:inherit;cursor:pointer;border:none;background:none;font-size:13px}
+input,select,textarea{font-family:inherit;font-size:13px;font-weight:300;border:1px solid var(--line);border-radius:4px;padding:7px 9px;width:100%;background:#fff}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--red);outline-offset:-1px;border-color:transparent}
+label{font-size:12px;color:var(--sub);display:block;margin-bottom:3px}
+
+header{background:var(--card);border-bottom:2px solid var(--red);padding:12px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10}
+header h1{font-size:16px;font-weight:600}
+header h1 span{color:var(--red)}
+.spacer{flex:1}
+#whoami{width:auto;min-width:170px}
+.btn{padding:7px 14px;border-radius:4px;font-weight:400}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:var(--red-dark)}
+.btn-ghost{border:1px solid var(--line);background:#fff}
+.btn-ghost:hover{border-color:var(--sub)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+main{max-width:1200px;margin:0 auto;padding:18px 20px 60px}
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+#syncState{font-size:12px;color:var(--sub)}
+
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+th{font-size:11px;font-weight:500;color:var(--sub);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);background:#FCFCFC;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#FFF6F6}
+tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
+.cname{font-weight:400;max-width:280px}
+.cdate{white-space:nowrap;font-size:12.5px;color:var(--sub)}
+
+.dots{display:flex;gap:5px}
+.dot{width:11px;height:11px;border-radius:50%;background:#E9E9E9;border:1px solid #DADADA}
+.dot.ok{background:var(--ok);border-color:var(--ok)}
+.dot.wait{background:#FFD9A0;border-color:var(--wait)}
+.chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#EFEFEF;color:var(--sub);white-space:nowrap}
+.chip.ok{background:#E6F4EA;color:var(--ok)}
+.chip.wait{background:#FFF3E0;color:var(--wait)}
+.chip.alert{background:#FDE7E7;color:var(--alert);font-weight:400}
+
+/* drawer */
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;z-index:20}
+#ov.open{display:block}
+#drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--card);z-index:21;transform:translateX(100%);transition:transform .2s;overflow-y:auto;box-shadow:-4px 0 20px rgba(0,0,0,.12)}
+#drawer.open{transform:none}
+.dhead{padding:16px 20px;border-bottom:2px solid var(--red);display:flex;align-items:flex-start;gap:10px;position:sticky;top:0;background:var(--card);z-index:2}
+.dhead h2{font-size:15px;font-weight:600;flex:1;line-height:1.35}
+.dbody{padding:16px 20px 40px}
+.sect{margin-bottom:20px}
+.sect h3{font-size:12px;font-weight:500;color:var(--red);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.step{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)}
+.step:last-child{border-bottom:none}
+.step .who{font-size:11px;color:var(--sub);min-width:78px}
+.step .nm{flex:1}
+.step input[type=checkbox]{width:16px;height:16px;accent-color:var(--red)}
+.step select{width:auto}
+.step .ts{font-size:11px;color:var(--sub)}
+.docrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.docrow:last-child{border-bottom:none}
+.docrow .nm{flex:1}
+.docrow .fn{font-size:11.5px;color:var(--ok);word-break:break-all}
+.docrow .fn.miss{color:var(--none)}
+.link{color:var(--red);text-decoration:underline;font-size:12.5px}
+.mini{font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid var(--line)}
+.mini:hover{border-color:var(--red);color:var(--red)}
+
+/* modal (add course / email / setup) */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-start;justify-content:center;z-index:30;overflow-y:auto;padding:30px 12px}
+.modal.open{display:flex}
+.mcard{background:#fff;border-radius:8px;width:min(620px,100%);padding:22px}
+.mcard h2{font-size:15px;font-weight:600;margin-bottom:14px}
+.mcard h2 span{color:var(--red)}
+.frow{margin-bottom:10px}
+.mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.tabs{display:flex;gap:0;border:1px solid var(--line);border-radius:4px;overflow:hidden;width:fit-content;margin-bottom:12px}
+.tabs button{padding:6px 16px;background:#fff}
+.tabs button.on{background:var(--red);color:#fff}
+#emailOut{font-family:'Prompt',monospace;font-size:12.5px;height:300px;white-space:pre-wrap}
+.note{font-size:12px;color:var(--sub);line-height:1.6}
+.note code{background:#F1F1F1;padding:1px 5px;border-radius:3px;font-size:11.5px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:5px;font-size:13px;display:none;z-index:50}
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>HRS-T</span> Training Tracker</h1>
+  <div class="spacer"></div>
+  <select id="whoami">
+    <option value="training">Training Officer (Oy)</option>
+    <option value="purchasing">จัดซื้อ</option>
+    <option value="accounting">Accounting</option>
+    <option value="dsd">Training Officer (DSD)</option>
+  </select>
+  <button class="btn btn-ghost" onclick="openSetup()">ตั้งค่า</button>
+</header>
+
+<main>
+  <div class="toolbar">
+    <button class="btn btn-red" onclick="openAdd()">+ เพิ่มหลักสูตร</button>
+    <button class="btn btn-ghost" onclick="loadData(true)">รีเฟรช</button>
+    <span id="syncState"></span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>#</th><th>หลักสูตร / สถาบัน</th><th>วันอบรม</th><th>คน</th>
+      <th>ขั้นตอน</th><th>สถานะล่าสุด</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+
+<!-- drawer -->
+<div id="ov" onclick="closeDrawer()"></div>
+<aside id="drawer"></aside>
+
+<!-- add course -->
+<div class="modal" id="mAdd"><div class="mcard">
+  <h2><span>เพิ่ม</span>หลักสูตร</h2>
+  <div class="frow"><label>ชื่อหลักสูตร</label><input id="aName"></div>
+  <div class="frow"><label>สถาบัน / เวนเดอร์</label><input id="aVendor"></div>
+  <div class="grid2">
+    <div class="frow"><label>วันที่เริ่ม</label><input id="aStart" type="date"></div>
+    <div class="frow"><label>วันที่สิ้นสุด</label><input id="aEnd" type="date"></div>
+  </div>
+  <div class="grid2">
+    <div class="frow"><label>จำนวนคน</label><input id="aCount" type="number" min="1" value="1"></div>
+    <div class="frow"><label>สถานะเวนเดอร์เริ่มต้น</label>
+      <select id="aVstat"><option value="none">มีเวนเดอร์อยู่แล้ว</option><option value="wait">ต้องขอเปิดเวนเดอร์</option></select>
+    </div>
+  </div>
+  <div class="frow"><label>รายชื่อผู้เข้าอบรม (บรรทัดละคน)</label><textarea id="aPeople" rows="3"></textarea></div>
+  <div class="mfoot">
+    <button class="btn btn-ghost" onclick="closeModal('mAdd')">ยกเลิก</button>
+    <button class="btn btn-red" onclick="addCourse()">บันทึก</button>
+  </div>
+</div></div>
+
+<!-- email generator -->
+<div class="modal" id="mEmail"><div class="mcard">
+  <h2><span>อีเมล</span>ยืนยันการอบรม</h2>
+  <div class="tabs" id="langTabs">
+    <button data-l="th" class="on" onclick="setLang('th')">ไทย</button>
+    <button data-l="jp" onclick="setLang('jp')">日本語</button>
+    <button data-l="en" onclick="setLang('en')">English</button>
+  </div>
+  <div class="grid2">
+    <div class="frow"><label>เรียนถึง (ชื่อผู้รับ)</label><input id="eTo"></div>
+    <div class="frow"><label>เวลา</label><input id="eTime" value="09:00 - 16:30"></div>
+  </div>
+  <div class="frow"><label>ชื่อหลักสูตร (ตามภาษาอีเมล)</label><input id="eCourse"></div>
+  <div class="frow"><label>สถานที่</label><input id="eVenue"></div>
+  <div class="frow"><label>ผู้เข้าอบรม</label><input id="ePeople"></div>
+  <div class="frow"><label>Remark (รายกรณี — แสดงก่อน signature)</label><textarea id="eRemark" rows="3"></textarea></div>
+  <div class="frow"><label>ข้อความอีเมล</label><textarea id="emailOut" readonly></textarea></div>
+  <div class="mfoot">
+    <button class="btn btn-ghost" onclick="closeModal('mEmail')">ปิด</button>
+    <button class="btn btn-red" onclick="copyEmail()">คัดลอกอีเมล</button>
+  </div>
+</div></div>
+
+<!-- setup -->
+<div class="modal" id="mSetup"><div class="mcard">
+  <h2><span>ตั้งค่า</span>การเชื่อมต่อ</h2>
+  <p class="note" style="margin-bottom:12px">
+    ข้อมูลและไฟล์ PDF เก็บใน GitHub repo <b>ส่วนตัว</b> ของทีม (ครั้งแรก: สร้าง private repo เปล่า 1 อัน
+    แล้วสร้าง Fine-grained token ที่ Settings → Developer settings → เลือกเฉพาะ repo นั้น ให้สิทธิ์ Contents: Read and write
+    จากนั้นส่งค่า 3 ช่องนี้ให้ทุกคนในทีมกรอกครั้งเดียว)
+  </p>
+  <div class="frow"><label>Owner (ชื่อบัญชี GitHub)</label><input id="sOwner"></div>
+  <div class="frow"><label>Repo (ชื่อ private repo เก็บข้อมูล)</label><input id="sRepo"></div>
+  <div class="frow"><label>Token (fine-grained, สิทธิ์ Contents RW เฉพาะ repo นี้)</label><input id="sToken" type="password"></div>
+  <div class="mfoot">
+    <button class="btn btn-ghost" onclick="closeModal('mSetup')">ยกเลิก</button>
+    <button class="btn btn-red" onclick="saveSetup()">บันทึกและเชื่อมต่อ</button>
+  </div>
+</div></div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= config & github io ================= */
+const CFG_KEY='tt_cfg';
+let cfg=JSON.parse(localStorage.getItem(CFG_KEY)||'null');
+let data={courses:[]}, dataSha=null, currentId=null, lang='th';
+
+const api=(path)=>`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;
+const H=()=>({'Authorization':'Bearer '+cfg.token,'Accept':'application/vnd.github+json'});
+
+async function ghGet(path,raw=false){
+  const r=await fetch(api(path),{headers:{...H(),...(raw?{'Accept':'application/vnd.github.raw'}:{})},cache:'no-store'});
+  if(r.status===404)return null;
+  if(!r.ok)throw new Error('GitHub '+r.status);
+  return raw?r.arrayBuffer():r.json();
+}
+async function ghPut(path,base64,sha,msg){
+  const body={message:msg,content:base64};
+  if(sha)body.sha=sha;
+  const r=await fetch(api(path),{method:'PUT',headers:H(),body:JSON.stringify(body)});
+  if(r.status===409||r.status===422){throw new Error('conflict')}
+  if(!r.ok)throw new Error('GitHub '+r.status);
+  return r.json();
+}
+const b64=s=>btoa(unescape(encodeURIComponent(s)));
+
+async function loadData(showToast){
+  if(!cfg){openSetup();return}
+  sync('กำลังโหลด…');
+  try{
+    const f=await ghGet('data.json');
+    if(f){data=JSON.parse(decodeURIComponent(escape(atob(f.content))));dataSha=f.sha}
+    else{data={courses:[]};dataSha=null}
+    render();
+    sync('ซิงค์ล่าสุด '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}));
+    if(showToast)toast('อัปเดตข้อมูลแล้ว');
+  }catch(e){sync('เชื่อมต่อไม่ได้ — ตรวจการตั้งค่า');console.error(e)}
+}
+async function saveData(msg){
+  try{
+    const res=await ghPut('data.json',b64(JSON.stringify(data,null,1)),dataSha,msg);
+    dataSha=res.content.sha;
+    sync('บันทึกแล้ว '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}));
+  }catch(e){
+    if(e.message==='conflict'){toast('มีคนอื่นบันทึกก่อนหน้า — กำลังโหลดใหม่ กรุณาทำซ้ำ');await loadData();}
+    else{toast('บันทึกไม่สำเร็จ');console.error(e)}
+    throw e;
+  }
+}
+const sync=t=>document.getElementById('syncState').textContent=t;
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',2600)}
+
+/* ================= model ================= */
+/* steps: vendor(none|wait|ok) → register → hbi → pr → email → payment → dsd */
+const STEPS=[
+  {k:'vendor', nm:'เปิดเวนเดอร์', who:'จัดซื้อ', type:'vendor'},
+  {k:'register', nm:'สมัครอบรม', who:'Training'},
+  {k:'hbi', nm:'อนุมัติใน HBI', who:'Training'},
+  {k:'pr', nm:'เปิด PR', who:'Training'},
+  {k:'email', nm:'ส่งอีเมลยืนยัน', who:'Training'},
+  {k:'payment', nm:'ทำจ่าย', who:'Accounting'},
+  {k:'dsd', nm:'ยื่น DSD', who:'DSD'},
+];
+const DOCS=[
+  {k:'invoice', nm:'Invoice', who:'Training'},
+  {k:'app', nm:'ใบสมัคร', who:'Training'},
+  {k:'detail', nm:'รายละเอียดหลักสูตร (DSD)', who:'Training'},
+  {k:'payproof', nm:'หลักฐานการชำระเงิน', who:'Accounting'},
+];
+function stepState(c,k){
+  if(k==='vendor')return c.vendor;                // 'none'|'wait'|'ok'
+  return c.steps[k]?'ok':(prevDone(c,k)?'wait':'idle');
+}
+function prevDone(c,k){
+  const order=['vendor','register','hbi','pr','email','payment','dsd'];
+  const i=order.indexOf(k);
+  if(i===0)return true;
+  const p=order[i-1];
+  return p==='vendor'?(c.vendor!=='wait'):!!c.steps[p];
+}
+function lastStatus(c){
+  if(c.steps.dsd)return{t:'เสร็จสิ้น',cl:'ok'};
+  // first not-done step = current waiting point
+  for(const s of STEPS){
+    if(s.k==='vendor'){if(c.vendor==='wait')return{t:'รอเปิดเวนเดอร์',cl:'wait'};continue}
+    if(!c.steps[s.k])return{t:'รอ'+s.nm,cl:'wait'};
+  }
+  return{t:'เสร็จสิ้น',cl:'ok'};
+}
+function isLate(c){
+  // ponytail: naive rule — เริ่มอบรมใน 7 วันแต่ยังไม่ส่งอีเมลยืนยัน หรือเลยวันอบรมแต่ยังไม่ทำจ่าย
+  const today=new Date().toISOString().slice(0,10);
+  const soon=new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+  if(!c.steps.email && c.start<=soon && !c.steps.dsd)return true;
+  if(!c.steps.payment && c.end<today)return true;
+  return false;
+}
+
+/* ================= render ================= */
+function dateRange(c){
+  const f=s=>{if(!s)return'';const[y,m,d]=s.split('-');return`${d}/${m}/${(+y+543).toString().slice(2)}`};
+  return c.start===c.end?f(c.start):f(c.start)+' – '+f(c.end);
+}
+function render(){
+  const tb=document.getElementById('rows');
+  tb.innerHTML='';
+  const cs=[...data.courses].sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+  if(!cs.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--sub);text-align:center;padding:30px">ยังไม่มีหลักสูตร — กด "+ เพิ่มหลักสูตร" เพื่อเริ่ม</td></tr>';return}
+  for(const c of cs){
+    const st=lastStatus(c), late=isLate(c);
+    const dots=STEPS.map(s=>{
+      const v=stepState(c,s.k);
+      const cl=s.k==='vendor'?(c.vendor==='ok'||c.vendor==='none'?'ok':'wait'):(v==='ok'?'ok':v==='wait'?'wait':'');
+      return`<span class="dot ${cl}" title="${s.nm}"></span>`;
+    }).join('');
+    const tr=document.createElement('tr');
+    if(late)tr.className='late';
+    tr.innerHTML=`<td>${c.no}</td>
+      <td class="cname">${esc(c.name)}<br><span style="font-size:11.5px;color:var(--sub)">${esc(c.vendorName||'')}</span></td>
+      <td class="cdate">${dateRange(c)}</td><td>${c.count||''}</td>
+      <td><div class="dots">${dots}</div></td>
+      <td><span class="chip ${late?'alert':st.cl}">${late?'⚠ เสี่ยงหลุด — ':''}${st.t}</span></td>`;
+    tr.onclick=()=>openDrawer(c.id);
+    tb.appendChild(tr);
+  }
+}
+const esc=s=>(s||'').replace(/[<>&"]/g,m=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[m]));
+
+/* ================= drawer ================= */
+function openDrawer(id){
+  currentId=id;
+  const c=data.courses.find(x=>x.id===id);
+  const d=document.getElementById('drawer');
+  const stepRows=STEPS.map(s=>{
+    if(s.k==='vendor'){
+      return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>
+        <select onchange="setVendor(this.value)">
+          <option value="none" ${c.vendor==='none'?'selected':''}>ไม่ต้องเปิด</option>
+          <option value="wait" ${c.vendor==='wait'?'selected':''}>รอเปิด</option>
+          <option value="ok" ${c.vendor==='ok'?'selected':''}>เปิดแล้ว</option>
+        </select></div>`;
+    }
+    const done=!!c.steps[s.k];
+    const extra=s.k==='email'?`<button class="mini" onclick="event.stopPropagation();openEmail()">สร้างอีเมล</button>`:'';
+    const ts=done&&c.stepTs[s.k]?`<span class="ts">${c.stepTs[s.k]}</span>`:'';
+    return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>${extra}${ts}
+      <input type="checkbox" ${done?'checked':''} onchange="setStep('${s.k}',this.checked)"></div>`;
+  }).join('');
+  const docRows=DOCS.map(dc=>{
+    const f=c.docs[dc.k];
+    return`<div class="docrow"><span class="who" style="font-size:11px;color:var(--sub);min-width:78px">${dc.who}</span>
+      <span class="nm">${dc.nm}<br><span class="fn ${f?'':'miss'}">${f?esc(f):'ยังไม่มีไฟล์'}</span></span>
+      ${f?`<button class="mini" onclick="dlDoc('${dc.k}')">ดาวน์โหลด</button>`:''}
+      <button class="mini" onclick="upDoc('${dc.k}')">${f?'แทนที่':'อัปโหลด PDF'}</button></div>`;
+  }).join('');
+  d.innerHTML=`
+    <div class="dhead"><h2>${c.no}. ${esc(c.name)}</h2>
+      <button class="btn btn-ghost" onclick="closeDrawer()">✕</button></div>
+    <div class="dbody">
+      <div class="sect"><h3>ข้อมูลหลักสูตร</h3>
+        <div class="grid2">
+          <div class="frow"><label>สถาบัน / เวนเดอร์</label><input value="${esc(c.vendorName||'')}" onchange="editField('vendorName',this.value)"></div>
+          <div class="frow"><label>จำนวนคน</label><input type="number" value="${c.count||1}" onchange="editField('count',+this.value)"></div>
+          <div class="frow"><label>วันที่เริ่ม</label><input type="date" value="${c.start||''}" onchange="editField('start',this.value)"></div>
+          <div class="frow"><label>วันที่สิ้นสุด</label><input type="date" value="${c.end||''}" onchange="editField('end',this.value)"></div>
+        </div>
+        <div class="frow"><label>ผู้เข้าอบรม (บรรทัดละคน)</label><textarea rows="3" onchange="editField('people',this.value)">${esc(c.people||'')}</textarea></div>
+      </div>
+      <div class="sect"><h3>ขั้นตอน</h3>${stepRows}</div>
+      <div class="sect"><h3>เอกสาร PDF</h3>${docRows}</div>
+      <div class="sect"><button class="mini" style="color:var(--alert);border-color:var(--alert)" onclick="delCourse()">ลบหลักสูตรนี้</button></div>
+    </div>`;
+  document.getElementById('ov').classList.add('open');
+  d.classList.add('open');
+}
+function closeDrawer(){document.getElementById('ov').classList.remove('open');document.getElementById('drawer').classList.remove('open');currentId=null}
+const cur=()=>data.courses.find(x=>x.id===currentId);
+
+async function setStep(k,v){
+  const c=cur();c.steps[k]=v;
+  c.stepTs[k]=v?new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'}):null;
+  await saveData(`step ${k}=${v} : ${c.name}`);render();openDrawer(c.id);
+}
+async function setVendor(v){const c=cur();c.vendor=v;await saveData(`vendor ${v} : ${c.name}`);render();openDrawer(c.id)}
+async function editField(f,v){const c=cur();c[f]=v;await saveData(`edit ${f} : ${c.name}`);render()}
+async function delCourse(){
+  if(!confirm('ลบหลักสูตรนี้? (ไฟล์ PDF ใน repo จะยังอยู่)'))return;
+  data.courses=data.courses.filter(x=>x.id!==currentId);
+  await saveData('delete course');closeDrawer();render();
+}
+
+/* ================= add course ================= */
+function openAdd(){document.getElementById('mAdd').classList.add('open')}
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+async function addCourse(){
+  const name=document.getElementById('aName').value.trim();
+  if(!name){toast('กรอกชื่อหลักสูตร');return}
+  const no=Math.max(0,...data.courses.map(c=>c.no))+1;
+  data.courses.push({
+    id:Date.now().toString(36), no, name,
+    vendorName:document.getElementById('aVendor').value.trim(),
+    start:document.getElementById('aStart').value,
+    end:document.getElementById('aEnd').value||document.getElementById('aStart').value,
+    count:+document.getElementById('aCount').value||1,
+    people:document.getElementById('aPeople').value.trim(),
+    vendor:document.getElementById('aVstat').value,   // none|wait|ok
+    steps:{}, stepTs:{}, docs:{}
+  });
+  await saveData('add course: '+name);
+  closeModal('mAdd');
+  ['aName','aVendor','aStart','aEnd','aPeople'].forEach(i=>document.getElementById(i).value='');
+  render();
+}
+
+/* ================= pdf upload / download ================= */
+function safeName(s){return s.replace(/[\\/:*?"<>|#%\s]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)}
+function docPath(c,k){
+  const label={invoice:'Invoice',app:'ใบสมัคร',detail:'รายละเอียดหลักสูตร',payproof:'หลักฐานการชำระเงิน'}[k];
+  return`docs/${String(c.no).padStart(2,'0')}_${safeName(c.name)}_${label}.pdf`;
+}
+function upDoc(k){
+  const inp=document.createElement('input');inp.type='file';inp.accept='application/pdf';
+  inp.onchange=async()=>{
+    const file=inp.files[0];if(!file)return;
+    if(file.size>20*1024*1024){toast('ไฟล์ใหญ่เกิน 20MB');return}
+    toast('กำลังอัปโหลด…');
+    const c=cur(), path=docPath(c,k);
+    const buf=await file.arrayBuffer();
+    let bin='';const bytes=new Uint8Array(buf);
+    for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+    try{
+      const existing=await ghGet(path);
+      await ghPut(path,btoa(bin),existing?.sha,'upload '+path);
+      c.docs[k]=path.split('/')[1];
+      await saveData('doc '+k+' : '+c.name);
+      toast('อัปโหลดสำเร็จ');render();openDrawer(c.id);
+    }catch(e){toast('อัปโหลดไม่สำเร็จ');console.error(e)}
+  };
+  inp.click();
+}
+async function dlDoc(k){
+  const c=cur(), fn=c.docs[k];
+  toast('กำลังดาวน์โหลด…');
+  try{
+    const buf=await ghGet('docs/'+fn,true);
+    const url=URL.createObjectURL(new Blob([buf],{type:'application/pdf'}));
+    const a=document.createElement('a');a.href=url;a.download=fn;a.click();
+    URL.revokeObjectURL(url);
+  }catch(e){toast('ดาวน์โหลดไม่สำเร็จ');console.error(e)}
+}
+
+/* ================= email templates ================= */
+const SIG=`Ms. Nobsamon Thadtapong (Oy) | นบศมน ถัดทะพงษ์ (ออย)
+People Center Department
+HR Service Excellent (HRSX)
+Asian Honda Motor Co., Ltd.
+14 Sarasin Building, Surasak Rd.,
+Silom, Bangrak, Bangkok 10500
+Tel.  (+66) 63-191-0261
+E-Mail : nobsatha@honda.th.com`;
+
+function openEmail(){
+  const c=cur();
+  document.getElementById('eCourse').value=c.name;
+  document.getElementById('ePeople').value=(c.people||'').split('\n').filter(Boolean).join(', ');
+  document.getElementById('eVenue').value=c._venue||'';
+  document.getElementById('eTo').value=c._to||'';
+  document.getElementById('eRemark').value='';
+  document.getElementById('mEmail').classList.add('open');
+  genEmail();
+}
+function setLang(l){
+  lang=l;
+  document.querySelectorAll('#langTabs button').forEach(b=>b.classList.toggle('on',b.dataset.l===l));
+  const def={
+    th:'หากรับทราบรายละเอียดแล้ว ออยรบกวนกดยืนยันการเข้าร่วมอบรม ตามอีเมลด้านล่างนี้ด้วยนะคะ',
+    jp:'なお、受講確認、およびお支払い予定日のご連絡につきましては、弊社にて対応いたしますので、ご対応いただく必要はございません。\nまた、持ち物について特に指定はございませんが、ノートや筆記用具をご持参いただければ結構です。',
+    en:'Once you have acknowledged the details, please kindly confirm your attendance by replying to this email.'
+  };
+  document.getElementById('eRemark').value=def[l];
+  genEmail();
+}
+function jd(s){if(!s)return'';const[y,m,d]=s.split('-');return`${y}年${+m}月${+d}日`}
+function ed(s){if(!s)return'';const[y,m,d]=s.split('-');return`${d}/${m}/${y}`}
+function genEmail(){
+  const c=cur()||{};
+  const v=id=>document.getElementById(id).value.trim();
+  const to=v('eTo'),course=v('eCourse'),time=v('eTime'),venue=v('eVenue'),people=v('ePeople'),rm=v('eRemark');
+  const dTH=c.start===c.end?ed(c.start):`${ed(c.start)} - ${ed(c.end)}`;
+  const dJP=c.start===c.end?jd(c.start):`${jd(c.start)}～${jd(c.end)}`;
+  let t='';
+  if(lang==='th')t=`เรียน ${to}
+
+ขออนุญาตแจ้งยืนยันการจัดอบรม หลักสูตร ${course} ตามรายละเอียด ดังนี้ค่ะ
+
+รายละเอียดการอบรม
+ชื่อหลักสูตร\t${course}
+วันที่อบรม\t${dTH}
+เวลา\t${time} น.
+สถานที่\t${venue}
+ผู้เข้าอบรม\t${people}
+
+${rm}
+
+ด้วยความเคารพ
+ขอบคุณค่ะ
+
+${SIG}`;
+  if(lang==='jp')t=`${to}様、
+いつもお世話になっております。
+下記の通り、${course}研修の詳細についてご案内させていただきます。
+
+【研修詳細】
+コース名\t${course}
+受講日\t${dJP}
+時間\t${time}
+会場\t${venue}
+受講者\t${people}
+
+【ご案内】
+${rm}
+
+ご不明な点がございましたら、お気軽にご連絡ください。
+何卒よろしくお願い申し上げます。
+
+${SIG}`;
+  if(lang==='en')t=`Dear ${to},
+
+Please be informed of the confirmed training details for the course "${course}" as follows.
+
+Training Details
+Course\t${course}
+Date\t${dTH}
+Time\t${time}
+Venue\t${venue}
+Participant(s)\t${people}
+
+${rm}
+
+Should you have any questions, please feel free to contact me.
+
+Best regards,
+
+${SIG}`;
+  document.getElementById('emailOut').value=t;
+}
+['eTo','eTime','eCourse','eVenue','ePeople','eRemark'].forEach(id=>{
+  document.addEventListener('input',e=>{if(e.target.id===id)genEmail()});
+});
+async function copyEmail(){
+  await navigator.clipboard.writeText(document.getElementById('emailOut').value);
+  const c=cur();if(c){c._to=document.getElementById('eTo').value;c._venue=document.getElementById('eVenue').value}
+  toast('คัดลอกแล้ว');
+}
+
+/* ================= setup ================= */
+function openSetup(){
+  if(cfg){document.getElementById('sOwner').value=cfg.owner;document.getElementById('sRepo').value=cfg.repo;document.getElementById('sToken').value=cfg.token}
+  document.getElementById('mSetup').classList.add('open');
+}
+async function saveSetup(){
+  cfg={owner:document.getElementById('sOwner').value.trim(),
+       repo:document.getElementById('sRepo').value.trim(),
+       token:document.getElementById('sToken').value.trim()};
+  if(!cfg.owner||!cfg.repo||!cfg.token){toast('กรอกให้ครบทั้ง 3 ช่อง');return}
+  localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
+  closeModal('mSetup');
+  await loadData(true);
+}
+
+/* ================= boot ================= */
+document.getElementById('whoami').value=localStorage.getItem('tt_role')||'training';
+document.getElementById('whoami').onchange=e=>localStorage.setItem('tt_role',e.target.value);
+loadData();
+</script>
+</body>
+</html>
