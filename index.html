@@ -143,9 +143,12 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
   </div>
   <div class="grid2">
     <div class="frow"><label>จำนวนคน</label><input id="aCount" type="number" min="1" value="1"></div>
-    <div class="frow"><label>สถานะเวนเดอร์เริ่มต้น</label>
-      <select id="aVstat"><option value="none">มีเวนเดอร์อยู่แล้ว</option><option value="wait_docs">ต้องขอเปิดเวนเดอร์</option></select>
+    <div class="frow"><label>ประเภท</label>
+      <select id="aCat"><option>Public</option><option>Inhouse</option><option>Other</option></select>
     </div>
+  </div>
+  <div class="frow"><label>สถานะเวนเดอร์เริ่มต้น</label>
+      <select id="aVstat"><option value="none">มีเวนเดอร์อยู่แล้ว</option><option value="wait_docs">ต้องขอเปิดเวนเดอร์</option></select>
   </div>
   <div class="frow"><label>รายชื่อผู้เข้าอบรม (บรรทัดละคน)</label><textarea id="aPeople" rows="3"></textarea></div>
   <div class="mfoot">
@@ -252,6 +255,9 @@ function toast(t){const el=document.getElementById('toast');el.textContent=t;el.
 /* vendor: none | wait_docs | review | ok   → รอเอกสารจากเวนเดอร์ → พิจารณาเอกสาร → เสร็จสิ้น */
 const VTXT={none:'ไม่ต้องเปิด',wait_docs:'รอเอกสารจากเวนเดอร์',review:'พิจารณาเอกสาร',ok:'เสร็จสิ้น'};
 const PAYROUNDS=['','ทำจ่ายรอบกลางเดือน','ทำจ่ายรอบปลายเดือน','ทำจ่ายรอบพิเศษ (รอบเงินเดือน)'];
+const ROLES={training:'Training (Oy)',purchasing:'จัดซื้อ',accounting:'Accounting',dsd:'Training (DSD)'};
+const myRole=()=>ROLES[document.getElementById('whoami').value]||'';
+const CATS=['Public','Inhouse','Other'];
 const vendorDone=c=>c.vendor==='none'||c.vendor==='ok';
 /* steps: vendor → register → hbi → pr → email → payment → dsd */
 const STEPS=[
@@ -321,7 +327,7 @@ function render(){
     const tr=document.createElement('tr');
     if(late)tr.className='late';
     tr.innerHTML=`<td>${c.no}</td>
-      <td class="cname">${esc(c.name)}<br><span style="font-size:11.5px;color:var(--sub)">${esc(c.vendorName||'')}</span></td>
+      <td class="cname">${esc(c.name)} <span class="chip" style="font-size:10px">${esc(c.cat||'')}</span><br><span style="font-size:11.5px;color:var(--sub)">${esc(c.vendorName||'')}</span></td>
       <td class="cdate">${dateRange(c)}</td><td>${c.count||''}</td>
       <td><div class="dots">${dots}</div></td>
       <td><span class="chip ${late?'alert':st.cl}">${late?'⚠ เสี่ยงหลุด — ':''}${st.t}</span></td>`;
@@ -339,12 +345,14 @@ function openDrawer(id){
   const stepRows=STEPS.map(s=>{
     if(s.k==='vendor'){
       const opts=Object.entries(VTXT).map(([v,t])=>`<option value="${v}" ${c.vendor===v?'selected':''}>${t}</option>`).join('');
-      return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>
+      const vby=c.vendorBy?`<span class="ts">${esc(c.vendorBy)}</span>`:'';
+      return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>${vby}
         <select onchange="setVendor(this.value)">${opts}</select></div>`;
     }
     const done=!!c.steps[s.k];
     const extra=s.k==='email'?`<button class="mini" onclick="event.stopPropagation();openEmail()">สร้างอีเมล</button>`:'';
-    const ts=done&&c.stepTs[s.k]?`<span class="ts">${c.stepTs[s.k]}</span>`:'';
+    const by=(c.stepBy||{})[s.k];
+    const ts=done&&c.stepTs[s.k]?`<span class="ts">${c.stepTs[s.k]}${by?' · '+esc(by):''}</span>`:'';
     let row=`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>${extra}${ts}
       <input type="checkbox" ${done?'checked':''} onchange="setStep('${s.k}',this.checked)"></div>`;
     if(s.k==='payment'){
@@ -356,9 +364,9 @@ function openDrawer(id){
     return row;
   }).join('');
   const docRows=DOCS.map(dc=>{
-    const f=c.docs[dc.k];
+    const f=c.docs[dc.k], db=(c.docBy||{})[dc.k];
     return`<div class="docrow"><span class="who" style="font-size:11px;color:var(--sub);min-width:78px">${dc.who}</span>
-      <span class="nm">${dc.nm}<br><span class="fn ${f?'':'miss'}">${f?esc(f):'ยังไม่มีไฟล์'}</span></span>
+      <span class="nm">${dc.nm}<br><span class="fn ${f?'':'miss'}">${f?esc(f):'ยังไม่มีไฟล์'}</span>${db?`<br><span class="ts">อัปโหลดโดย ${esc(db)}</span>`:''}</span>
       ${f?`<button class="mini" onclick="dlDoc('${dc.k}')">ดาวน์โหลด</button>`:''}
       <button class="mini" onclick="upDoc('${dc.k}')">${f?'แทนที่':'อัปโหลด PDF'}</button></div>`;
   }).join('');
@@ -369,6 +377,9 @@ function openDrawer(id){
       <div class="sect"><h3>ข้อมูลหลักสูตร</h3>
         <div class="grid2">
           <div class="frow"><label>สถาบัน / เวนเดอร์</label><input value="${esc(c.vendorName||'')}" onchange="editField('vendorName',this.value)"></div>
+          <div class="frow"><label>ประเภท</label>
+            <select onchange="editField('cat',this.value)">${CATS.map(x=>`<option ${c.cat===x?'selected':''}>${x}</option>`).join('')}</select>
+          </div>
           <div class="frow"><label>จำนวนคน</label><input type="number" value="${c.count||1}" onchange="editField('count',+this.value)"></div>
           <div class="frow"><label>วันที่เริ่ม</label><input type="date" value="${c.start||''}" onchange="editField('start',this.value)"></div>
           <div class="frow"><label>วันที่สิ้นสุด</label><input type="date" value="${c.end||''}" onchange="editField('end',this.value)"></div>
@@ -388,9 +399,10 @@ const cur=()=>data.courses.find(x=>x.id===currentId);
 async function setStep(k,v){
   const c=cur();c.steps[k]=v;
   c.stepTs[k]=v?new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'}):null;
-  await saveData(`step ${k}=${v} : ${c.name}`);render();openDrawer(c.id);
+  c.stepBy=c.stepBy||{};c.stepBy[k]=v?myRole():null;
+  await saveData(`step ${k}=${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id);
 }
-async function setVendor(v){const c=cur();c.vendor=v;await saveData(`vendor ${v} : ${c.name}`);render();openDrawer(c.id)}
+async function setVendor(v){const c=cur();c.vendor=v;c.vendorBy=myRole();await saveData(`vendor ${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id)}
 async function editField(f,v){const c=cur();c[f]=v;await saveData(`edit ${f} : ${c.name}`);render()}
 async function delCourse(){
   if(!confirm('ลบหลักสูตรนี้? (ไฟล์ PDF ใน repo จะยังอยู่)'))return;
@@ -411,6 +423,7 @@ async function addCourse(){
     start:document.getElementById('aStart').value,
     end:document.getElementById('aEnd').value||document.getElementById('aStart').value,
     count:+document.getElementById('aCount').value||1,
+    cat:document.getElementById('aCat').value,
     people:document.getElementById('aPeople').value.trim(),
     vendor:document.getElementById('aVstat').value,   // none|wait|ok
     steps:{}, stepTs:{}, docs:{}
@@ -441,7 +454,8 @@ function upDoc(k){
       const existing=await ghGet(path);
       await ghPut(path,btoa(bin),existing?.sha,'upload '+path);
       c.docs[k]=path.split('/')[1];
-      await saveData('doc '+k+' : '+c.name);
+      c.docBy=c.docBy||{};c.docBy[k]=myRole()+' '+new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'});
+      await saveData('doc '+k+' by '+myRole()+' : '+c.name);
       toast('อัปโหลดสำเร็จ');render();openDrawer(c.id);
     }catch(e){toast('อัปโหลดไม่สำเร็จ');console.error(e)}
   };
@@ -591,13 +605,14 @@ function importJSON(){
 function exportCSV(){
   // ponytail: CSV UTF-8 BOM เปิดใน Excel ได้ตรงๆ ไม่ต้องพึ่งไลบรารี xlsx
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
-  const head=['ลำดับ','หลักสูตร','สถาบัน','วันที่เริ่ม','วันที่สิ้นสุด','จำนวนคน','ผู้เข้าอบรม',
+  const head=['ลำดับ','หลักสูตร','ประเภท','สถาบัน','วันที่เริ่ม','วันที่สิ้นสุด','จำนวนคน','ผู้เข้าอบรม',
     'เวนเดอร์','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','รอบทำจ่าย','Remark ทำจ่าย','ยื่น DSD','สถานะล่าสุด',
     'Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน'];
+  const stepCell=(c,k)=>c.steps[k]?`${c.stepTs[k]||'✓'}${(c.stepBy||{})[k]?' ('+c.stepBy[k]+')':''}`:'';
   const rows=[...data.courses].sort((a,b)=>a.no-b.no).map(c=>[
-    c.no,c.name,c.vendorName,c.start,c.end,c.count,(c.people||'').split('\n').filter(Boolean).join('; '),
-    VTXT[c.vendor]||'',...['register','hbi','pr','email','payment'].map(k=>c.steps[k]?(c.stepTs[k]||'✓'):''),
-    c.payRound||'',c.payRemark||'',c.steps.dsd?(c.stepTs.dsd||'✓'):'',
+    c.no,c.name,c.cat||'',c.vendorName,c.start,c.end,c.count,(c.people||'').split('\n').filter(Boolean).join('; '),
+    VTXT[c.vendor]||'',...['register','hbi','pr','email','payment'].map(k=>stepCell(c,k)),
+    c.payRound||'',c.payRemark||'',stepCell(c,'dsd'),
     lastStatus(c).t,
     c.docs.invoice||'',c.docs.app||'',c.docs.detail||'',c.docs.payproof||''
   ].map(q).join(','));
