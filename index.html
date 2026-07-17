@@ -144,7 +144,7 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
   <div class="grid2">
     <div class="frow"><label>จำนวนคน</label><input id="aCount" type="number" min="1" value="1"></div>
     <div class="frow"><label>สถานะเวนเดอร์เริ่มต้น</label>
-      <select id="aVstat"><option value="none">มีเวนเดอร์อยู่แล้ว</option><option value="wait">ต้องขอเปิดเวนเดอร์</option></select>
+      <select id="aVstat"><option value="none">มีเวนเดอร์อยู่แล้ว</option><option value="wait_docs">ต้องขอเปิดเวนเดอร์</option></select>
     </div>
   </div>
   <div class="frow"><label>รายชื่อผู้เข้าอบรม (บรรทัดละคน)</label><textarea id="aPeople" rows="3"></textarea></div>
@@ -228,6 +228,7 @@ async function loadData(showToast){
     const f=await ghGet('data.json');
     if(f){data=JSON.parse(decodeURIComponent(escape(atob(f.content))));dataSha=f.sha}
     else{data={courses:[]};dataSha=null}
+    data.courses.forEach(c=>{if(c.vendor==='wait')c.vendor='wait_docs'});  // ponytail: migrate ค่าเวอร์ชันเก่า
     render();
     sync('ซิงค์ล่าสุด '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}));
     if(showToast)toast('อัปเดตข้อมูลแล้ว');
@@ -248,7 +249,11 @@ const sync=t=>document.getElementById('syncState').textContent=t;
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',2600)}
 
 /* ================= model ================= */
-/* steps: vendor(none|wait|ok) → register → hbi → pr → email → payment → dsd */
+/* vendor: none | wait_docs | review | ok   → รอเอกสารจากเวนเดอร์ → พิจารณาเอกสาร → เสร็จสิ้น */
+const VTXT={none:'ไม่ต้องเปิด',wait_docs:'รอเอกสารจากเวนเดอร์',review:'พิจารณาเอกสาร',ok:'เสร็จสิ้น'};
+const PAYROUNDS=['','ทำจ่ายรอบกลางเดือน','ทำจ่ายรอบปลายเดือน','ทำจ่ายรอบพิเศษ (รอบเงินเดือน)'];
+const vendorDone=c=>c.vendor==='none'||c.vendor==='ok';
+/* steps: vendor → register → hbi → pr → email → payment → dsd */
 const STEPS=[
   {k:'vendor', nm:'เปิดเวนเดอร์', who:'จัดซื้อ', type:'vendor'},
   {k:'register', nm:'สมัครอบรม', who:'Training'},
@@ -273,14 +278,17 @@ function prevDone(c,k){
   const i=order.indexOf(k);
   if(i===0)return true;
   const p=order[i-1];
-  return p==='vendor'?(c.vendor!=='wait'):!!c.steps[p];
+  return p==='vendor'?vendorDone(c):!!c.steps[p];
 }
 function lastStatus(c){
   if(c.steps.dsd)return{t:'เสร็จสิ้น',cl:'ok'};
   // first not-done step = current waiting point
   for(const s of STEPS){
-    if(s.k==='vendor'){if(c.vendor==='wait')return{t:'รอเปิดเวนเดอร์',cl:'wait'};continue}
-    if(!c.steps[s.k])return{t:'รอ'+s.nm,cl:'wait'};
+    if(s.k==='vendor'){if(!vendorDone(c))return{t:VTXT[c.vendor]||'รอเปิดเวนเดอร์',cl:'wait'};continue}
+    if(!c.steps[s.k]){
+      if(s.k==='payment'&&c.payRound)return{t:'รอ'+c.payRound.replace('ทำจ่าย','ทำจ่าย '),cl:'wait'};
+      return{t:'รอ'+s.nm,cl:'wait'};
+    }
   }
   return{t:'เสร็จสิ้น',cl:'ok'};
 }
@@ -307,8 +315,8 @@ function render(){
     const st=lastStatus(c), late=isLate(c);
     const dots=STEPS.map(s=>{
       const v=stepState(c,s.k);
-      const cl=s.k==='vendor'?(c.vendor==='ok'||c.vendor==='none'?'ok':'wait'):(v==='ok'?'ok':v==='wait'?'wait':'');
-      return`<span class="dot ${cl}" title="${s.nm}"></span>`;
+      const cl=s.k==='vendor'?(vendorDone(c)?'ok':'wait'):(v==='ok'?'ok':v==='wait'?'wait':'');
+      return`<span class="dot ${cl}" title="${s.nm}${s.k==='vendor'?' : '+(VTXT[c.vendor]||''):''}"></span>`;
     }).join('');
     const tr=document.createElement('tr');
     if(late)tr.className='late';
@@ -330,18 +338,22 @@ function openDrawer(id){
   const d=document.getElementById('drawer');
   const stepRows=STEPS.map(s=>{
     if(s.k==='vendor'){
+      const opts=Object.entries(VTXT).map(([v,t])=>`<option value="${v}" ${c.vendor===v?'selected':''}>${t}</option>`).join('');
       return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>
-        <select onchange="setVendor(this.value)">
-          <option value="none" ${c.vendor==='none'?'selected':''}>ไม่ต้องเปิด</option>
-          <option value="wait" ${c.vendor==='wait'?'selected':''}>รอเปิด</option>
-          <option value="ok" ${c.vendor==='ok'?'selected':''}>เปิดแล้ว</option>
-        </select></div>`;
+        <select onchange="setVendor(this.value)">${opts}</select></div>`;
     }
     const done=!!c.steps[s.k];
     const extra=s.k==='email'?`<button class="mini" onclick="event.stopPropagation();openEmail()">สร้างอีเมล</button>`:'';
     const ts=done&&c.stepTs[s.k]?`<span class="ts">${c.stepTs[s.k]}</span>`:'';
-    return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>${extra}${ts}
+    let row=`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>${extra}${ts}
       <input type="checkbox" ${done?'checked':''} onchange="setStep('${s.k}',this.checked)"></div>`;
+    if(s.k==='payment'){
+      const ropts=PAYROUNDS.map(r=>`<option value="${r}" ${c.payRound===r?'selected':''}>${r||'— เลือกรอบทำจ่าย —'}</option>`).join('');
+      row+=`<div class="step" style="padding-left:88px;border-bottom:1px dashed var(--line)">
+        <select style="max-width:230px" onchange="editField('payRound',this.value)">${ropts}</select>
+        <input placeholder="Remark ทำจ่าย" value="${esc(c.payRemark||'')}" onchange="editField('payRemark',this.value)" style="flex:1"></div>`;
+    }
+    return row;
   }).join('');
   const docRows=DOCS.map(dc=>{
     const f=c.docs[dc.k];
@@ -580,12 +592,12 @@ function exportCSV(){
   // ponytail: CSV UTF-8 BOM เปิดใน Excel ได้ตรงๆ ไม่ต้องพึ่งไลบรารี xlsx
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
   const head=['ลำดับ','หลักสูตร','สถาบัน','วันที่เริ่ม','วันที่สิ้นสุด','จำนวนคน','ผู้เข้าอบรม',
-    'เวนเดอร์','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','ยื่น DSD','สถานะล่าสุด',
+    'เวนเดอร์','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','รอบทำจ่าย','Remark ทำจ่าย','ยื่น DSD','สถานะล่าสุด',
     'Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน'];
-  const vtxt={none:'ไม่ต้องเปิด',wait:'รอเปิด',ok:'เปิดแล้ว'};
   const rows=[...data.courses].sort((a,b)=>a.no-b.no).map(c=>[
     c.no,c.name,c.vendorName,c.start,c.end,c.count,(c.people||'').split('\n').filter(Boolean).join('; '),
-    vtxt[c.vendor]||'',...['register','hbi','pr','email','payment','dsd'].map(k=>c.steps[k]?(c.stepTs[k]||'✓'):''),
+    VTXT[c.vendor]||'',...['register','hbi','pr','email','payment'].map(k=>c.steps[k]?(c.stepTs[k]||'✓'):''),
+    c.payRound||'',c.payRemark||'',c.steps.dsd?(c.stepTs.dsd||'✓'):'',
     lastStatus(c).t,
     c.docs.invoice||'',c.docs.app||'',c.docs.detail||'',c.docs.payproof||''
   ].map(q).join(','));
