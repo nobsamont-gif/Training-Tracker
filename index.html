@@ -145,6 +145,11 @@ tbody tr.late{box-shadow:inset 3px 0 0 var(--alert)}
     <button class="btn btn-ghost" onclick="backupJSON()">สำรองข้อมูล</button>
     <button class="btn btn-ghost" onclick="importJSON()">นำเข้าข้อมูล</button>
     <button class="btn btn-ghost" onclick="exportCSV()">Excel</button>
+    <select id="sortMode" style="width:auto" onchange="localStorage.setItem('tt_sort',this.value);render()">
+      <option value="date">เรียง: วันอบรม</option>
+      <option value="risk">เรียง: ความเสี่ยงสูง → ต่ำ</option>
+      <option value="no">เรียง: ลำดับที่สมัคร</option>
+    </select>
     <span id="syncState"></span>
   </div>
   <table>
@@ -259,7 +264,12 @@ async function loadData(showToast){
     const f=await ghGet('data.json');
     if(f){data=JSON.parse(decodeURIComponent(escape(atob(f.content))));dataSha=f.sha}
     else{data={courses:[]};dataSha=null}
-    data.courses.forEach(c=>{if(c.vendor==='wait')c.vendor='wait_docs'});  // ponytail: migrate ค่าเวอร์ชันเก่า
+    const be2ce=t=>typeof t==='string'?t.replace(/(\d{2}\/\d{2}\/)(\d{2})(?!\d)/g,(_,p,y)=>p+(1957+ +y)):t;
+    data.courses.forEach(c=>{
+      if(c.vendor==='wait')c.vendor='wait_docs';                 // migrate ค่าเวอร์ชันเก่า
+      for(const k in c.stepTs||{})c.stepTs[k]=be2ce(c.stepTs[k]); // migrate วันที่ พ.ศ. → ค.ศ.
+      for(const k in c.docBy||{})c.docBy[k]=be2ce(c.docBy[k]);
+    });
     render();
     sync('ซิงค์ล่าสุด '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}));
     if(showToast)toast('อัปเดตข้อมูลแล้ว');
@@ -302,6 +312,8 @@ const DOCS=[
   {k:'app', nm:'ใบสมัคร', who:'Training Co'},
   {k:'detail', nm:'รายละเอียดหลักสูตร (DSD)', who:'Training Co'},
   {k:'payproof', nm:'หลักฐานการชำระเงิน', who:'Accounting'},
+  {k:'receipt', nm:'ใบเสร็จรับเงิน', who:'Accounting'},
+  {k:'cert', nm:'Certificate', who:'Training Co'},
 ];
 function stepState(c,k){
   if(k==='vendor')return c.vendor;                // 'none'|'wait'|'ok'
@@ -396,14 +408,27 @@ document.addEventListener('click',e=>{if(!e.target.closest('#bellWrap'))closeNot
 
 /* ================= render ================= */
 function dateRange(c){
-  const f=s=>{if(!s)return'';const[y,m,d]=s.split('-');return`${d}/${m}/${(+y+543).toString().slice(2)}`};
+  const f=s=>{if(!s)return'';const[y,m,d]=s.split('-');return`${d}/${m}/${y}`};
   return c.start===c.end?f(c.start):f(c.start)+' – '+f(c.end);
+}
+function riskScore(c){
+  let r=0;
+  if(isLate(c))r+=100;
+  const i=cutoffInfo(c);
+  if(i){r+=i.days<=0?80:i.days<=3?60:i.days<=7?40:10}
+  if(!c.steps.dsd&&!r)r+=1;   // งานยังไม่จบ เสี่ยงกว่าเสร็จสิ้น
+  return r;
 }
 function render(){
   renderNotif();
   const tb=document.getElementById('rows');
   tb.innerHTML='';
-  const cs=[...data.courses].sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+  const mode=localStorage.getItem('tt_sort')||'date';
+  document.getElementById('sortMode').value=mode;
+  const cs=[...data.courses];
+  if(mode==='risk')cs.sort((a,b)=>riskScore(b)-riskScore(a)||(a.start||'').localeCompare(b.start||''));
+  else if(mode==='no')cs.sort((a,b)=>a.no-b.no);
+  else cs.sort((a,b)=>(a.start||'').localeCompare(b.start||''));
   if(!cs.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--sub);text-align:center;padding:30px">ยังไม่มีรายการ — กด "+ เพิ่มรายการ" เพื่อเริ่ม</td></tr>';return}
   for(const c of cs){
     const st=lastStatus(c), late=isLate(c), co=cutoffInfo(c);
@@ -488,7 +513,7 @@ const cur=()=>data.courses.find(x=>x.id===currentId);
 async function setStep(k,v){
   if(!requireRole()){openDrawer(currentId);return}
   const c=cur();c.steps[k]=v;
-  c.stepTs[k]=v?new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'}):null;
+  c.stepTs[k]=v?new Date().toLocaleDateString('en-GB'):null;
   c.stepBy=c.stepBy||{};c.stepBy[k]=v?myRole():null;
   await saveData(`step ${k}=${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id);
 }
@@ -529,7 +554,7 @@ async function addCourse(){
 /* ================= pdf upload / download ================= */
 function safeName(s){return s.replace(/[\\/:*?"<>|#%\s]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)}
 function docPath(c,k){
-  const label={invoice:'Invoice',app:'ใบสมัคร',detail:'รายละเอียดหลักสูตร',payproof:'หลักฐานการชำระเงิน'}[k];
+  const label={invoice:'Invoice',app:'ใบสมัคร',detail:'รายละเอียดหลักสูตร',payproof:'หลักฐานการชำระเงิน',receipt:'ใบเสร็จรับเงิน',cert:'Certificate'}[k];
   return`docs/${String(c.no).padStart(2,'0')}_${safeName(c.name)}_${label}.pdf`;
 }
 function upDoc(k){
@@ -547,7 +572,7 @@ function upDoc(k){
       const existing=await ghGet(path);
       await ghPut(path,btoa(bin),existing?.sha,'upload '+path);
       c.docs[k]=path.split('/')[1];
-      c.docBy=c.docBy||{};c.docBy[k]=myRole()+' '+new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'});
+      c.docBy=c.docBy||{};c.docBy[k]=myRole()+' '+new Date().toLocaleDateString('en-GB');
       await saveData('doc '+k+' by '+myRole()+' : '+c.name);
       toast('อัปโหลดสำเร็จ');render();openDrawer(c.id);
     }catch(e){toast('อัปโหลดไม่สำเร็จ');console.error(e)}
@@ -701,14 +726,14 @@ function exportCSV(){
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
   const head=['ลำดับ','หลักสูตร','ประเภท','สถาบัน','วันที่เริ่ม','วันที่สิ้นสุด','จำนวนคน','ผู้เข้าอบรม',
     'Vendor','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','รอบทำจ่าย','Remark ทำจ่าย','ยื่น DSD','สถานะล่าสุด',
-    'Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน'];
+    'Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน','ใบเสร็จรับเงิน','Certificate'];
   const stepCell=(c,k)=>c.steps[k]?`${c.stepTs[k]||'✓'}${(c.stepBy||{})[k]?' ('+c.stepBy[k]+')':''}`:'';
   const rows=[...data.courses].sort((a,b)=>a.no-b.no).map(c=>[
     c.no,c.name,c.cat||'',c.vendorName,c.start,c.end,c.count,(c.people||'').split('\n').filter(Boolean).join('; '),
     VTXT[c.vendor]||'',...['register','hbi','pr','email','payment'].map(k=>stepCell(c,k)),
     c.payRound||'',c.payRemark||'',stepCell(c,'dsd'),
     lastStatus(c).t,
-    c.docs.invoice||'',c.docs.app||'',c.docs.detail||'',c.docs.payproof||''
+    c.docs.invoice||'',c.docs.app||'',c.docs.detail||'',c.docs.payproof||'',c.docs.receipt||'',c.docs.cert||''
   ].map(q).join(','));
   const csv='\uFEFF'+head.map(q).join(',')+'\n'+rows.join('\n');
   dlBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),`training-tracker_${stamp()}.csv`);
