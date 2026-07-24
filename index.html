@@ -276,6 +276,7 @@ async function loadData(showToast){
       c.stepRemark=c.stepRemark||{};
       if(c.payRemark&&!c.stepRemark.payment){c.stepRemark.payment=c.payRemark;delete c.payRemark}
       if(typeof c.docs.cert==='string')c.docs.cert=[c.docs.cert];
+      if(c.pr===undefined){c.pr=c.steps.pr?'ok':'none';delete c.steps.pr}  // migrate PR เป็น optional
     });
     render();
     sync('ซิงค์ล่าสุด '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}));
@@ -304,6 +305,8 @@ const ROLES={training_co:'Training Co',training_dsd:'Training DSD',accounting:'A
 const myRole=()=>ROLES[document.getElementById('whoami').value]||'';
 const CATS=['Public','Inhouse','Other'];
 const vendorDone=c=>c.vendor==='none'||c.vendor==='ok';
+const PRTXT={none:'ไม่ต้องเปิด',wait:'รอเปิด PR',ok:'เปิดแล้ว'};
+const prDone=c=>c.pr!=='wait';   // ปกติไม่ต้องเปิด PR — เปิดเฉพาะอบรมกรุ๊ป/พนักงานญี่ปุ่นที่ไม่ได้ยื่น HBI เอง
 /* steps: vendor → register → hbi → pr → email → payment → dsd */
 const STEPS=[
   {k:'vendor', nm:'เปิด Vendor', who:'Purchasing', type:'vendor'},
@@ -331,13 +334,16 @@ function prevDone(c,k){
   const i=order.indexOf(k);
   if(i===0)return true;
   const p=order[i-1];
-  return p==='vendor'?vendorDone(c):!!c.steps[p];
+  if(p==='vendor')return vendorDone(c);
+  if(p==='pr')return prDone(c);
+  return !!c.steps[p];
 }
 function lastStatus(c){
   if(c.steps.dsd)return{t:'เสร็จสิ้น',cl:'ok'};
   // first not-done step = current waiting point
   for(const s of STEPS){
     if(s.k==='vendor'){if(!vendorDone(c))return{t:VTXT[c.vendor]||'รอเปิด Vendor',cl:'wait'};continue}
+    if(s.k==='pr'){if(!prDone(c))return{t:'รอเปิด PR',cl:'wait'};continue}
     if(!c.steps[s.k]){
       if(s.k==='payment'&&c.payRound)return{t:'รอ'+c.payRound.replace('ทำจ่าย','ทำจ่าย '),cl:'wait'};
       return{t:'รอ'+s.nm,cl:'wait'};
@@ -366,7 +372,7 @@ const daysTo=d=>Math.round((d-new Date().setHours(0,0,0,0))/864e5);
 function payMissing(c){
   // เอกสารที่ Training Co ต้องเตรียมให้ทันรอบทำจ่าย
   const m=[];
-  if(!c.steps.pr)m.push('เปิด PR');
+  if(c.pr==='wait')m.push('เปิด PR');
   if(!c.docs.invoice)m.push('Invoice');
   return m;
 }
@@ -442,8 +448,12 @@ function render(){
     const coChip=co&&co.days<=7?`<br><span class="chip ${co.days<=3?'alert':'wait'}" style="margin-top:3px">cut off ${fmtDM(co.target)} · ขาด ${co.miss.join('+')}</span>`:'';
     const dots=STEPS.map(s=>{
       const v=stepState(c,s.k);
-      const cl=s.k==='vendor'?(vendorDone(c)?'ok':'wait'):(v==='ok'?'ok':v==='wait'?'wait':'');
-      return`<span class="dot ${cl}" title="${s.nm}${s.k==='vendor'?' : '+(VTXT[c.vendor]||''):''}"></span>`;
+      let cl;
+      if(s.k==='vendor')cl=vendorDone(c)?'ok':'wait';
+      else if(s.k==='pr')cl=prDone(c)?'ok':'wait';
+      else cl=v==='ok'?'ok':v==='wait'?'wait':'';
+      const tt=s.k==='vendor'?' : '+(VTXT[c.vendor]||''):s.k==='pr'?' : '+(PRTXT[c.pr]||''):'';
+      return`<span class="dot ${cl}" title="${s.nm}${tt}"></span>`;
     }).join('');
     const tr=document.createElement('tr');
     if(late)tr.className='late';
@@ -469,6 +479,12 @@ function openDrawer(id){
       const vby=c.vendorBy?`<span class="ts">${esc(c.vendorBy)}</span>`:'';
       return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm}</span>${vby}
         <select onchange="setVendor(this.value)">${opts}</select></div>`+remarkRow(c,'vendor');
+    }
+    if(s.k==='pr'){
+      const opts=Object.entries(PRTXT).map(([v,t])=>`<option value="${v}" ${(c.pr||'none')===v?'selected':''}>${t}</option>`).join('');
+      const pby=c.prBy?`<span class="ts">${esc(c.prBy)}</span>`:'';
+      return`<div class="step"><span class="who">${s.who}</span><span class="nm">${s.nm} <span class="ts">(เฉพาะอบรมกรุ๊ป / พนักงานญี่ปุ่นที่ไม่ได้ยื่น HBI)</span></span>${pby}
+        <select onchange="setPr(this.value)">${opts}</select></div>`+remarkRow(c,'pr');
     }
     const done=!!c.steps[s.k];
     const extra=s.k==='email'?`<button class="mini" onclick="event.stopPropagation();openEmail()">สร้างอีเมล</button>`:'';
@@ -514,11 +530,45 @@ function openDrawer(id){
         <div class="frow"><label>ผู้เข้าอบรม (บรรทัดละคน)</label><textarea rows="3" onchange="editField('people',this.value)">${esc(c.people||'')}</textarea></div>
       </div>
       <div class="sect"><h3>ขั้นตอน</h3>${stepRows}</div>
+      <div class="sect"><h3>Invoice / ค่าใช้จ่าย</h3>
+        <div class="grid2">
+          <div class="frow"><label>ราคาต่อหัว ก่อน VAT (บาท)</label><input id="ivPrice" type="number" min="0" step="0.01" value="${c.price??''}" oninput="calcInv()" onchange="editField('price',+this.value||0)"></div>
+          <div class="frow"><label>เลขที่ Invoice</label><input value="${esc(c.invoiceNo||'')}" onchange="editField('invoiceNo',this.value)"></div>
+          <div class="frow"><label>VAT</label>
+            <select id="ivVat" onchange="calcInv();editField('vatOn',this.value==='1')">
+              <option value="1" ${c.vatOn!==false?'selected':''}>มี VAT 7%</option>
+              <option value="0" ${c.vatOn===false?'selected':''}>ยกเว้น VAT (สมาคม/มูลนิธิ)</option>
+            </select></div>
+          <div class="frow"><label>หัก ณ ที่จ่าย (%)</label>
+            <select id="ivWht" onchange="calcInv();editField('whtPct',+this.value)">
+              <option value="0" ${!c.whtPct?'selected':''}>ไม่หัก</option>
+              <option value="3" ${c.whtPct===3?'selected':''}>3%</option>
+            </select></div>
+          <div class="frow"><label>ครบกำหนดชำระ</label><input type="date" value="${c.invoiceDue||''}" onchange="editField('invoiceDue',this.value)"></div>
+        </div>
+        <div id="invSum" class="note" style="background:#FAFAFA;border:1px solid var(--line);border-radius:6px;padding:9px 12px;margin-top:4px"></div>
+      </div>
       <div class="sect"><h3>เอกสาร PDF</h3>${docRows}</div>
       <div class="sect"><button class="mini" style="color:var(--alert);border-color:var(--alert)" onclick="delCourse()">ลบหลักสูตรนี้</button></div>
     </div>`;
   document.getElementById('ov').classList.add('open');
   d.classList.add('open');
+  calcInv();
+}
+function calcInv(){
+  const c=cur();if(!c)return;
+  const el=document.getElementById('invSum');if(!el)return;
+  const price=+((document.getElementById('ivPrice')||{}).value)||0;
+  const vatOn=((document.getElementById('ivVat')||{}).value??'1')==='1';
+  const wht=+((document.getElementById('ivWht')||{}).value)||0;
+  const n=c.count||1;
+  const sub=price*n, vat=vatOn?sub*0.07:0, whtAmt=sub*wht/100, net=sub+vat-whtAmt;
+  const f=x=>x.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  el.innerHTML=price?`${f(price)} × ${n} คน = <b>${f(sub)}</b> บาท
+    ${vatOn?` &nbsp;+ VAT 7% = ${f(vat)}`:''}
+    ${wht?` &nbsp;− หัก ณ ที่จ่าย ${wht}% = ${f(whtAmt)}`:''}
+    &nbsp;→ ยอดชำระสุทธิ <b style="color:var(--red)">${f(net)}</b> บาท`
+    :'กรอกราคาต่อหัวเพื่อคำนวณยอด';
 }
 function remarkRow(c,k){
   const v=(c.stepRemark||{})[k]||'';
@@ -541,6 +591,7 @@ async function setStep(k,v){
   await saveData(`step ${k}=${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id);
 }
 async function setVendor(v){if(!requireRole()){openDrawer(currentId);return}const c=cur();c.vendor=v;c.vendorBy=myRole();await saveData(`vendor ${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id)}
+async function setPr(v){if(!requireRole()){openDrawer(currentId);return}const c=cur();c.pr=v;c.prBy=myRole();await saveData(`pr ${v} by ${myRole()} : ${c.name}`);render();openDrawer(c.id)}
 async function editField(f,v){if(!requireRole()){openDrawer(currentId);return}const c=cur();c[f]=v;await saveData(`edit ${f} : ${c.name}`);render()}
 async function delCourse(){
   if(!requireRole())return;
@@ -773,14 +824,17 @@ function exportCSV(){
   const q=s=>`"${String(s??'').replace(/"/g,'""')}"`;
   const head=['ลำดับ','หลักสูตร','ประเภท','สถาบัน','วันที่เริ่ม','วันที่สิ้นสุด','จำนวนคน','ผู้เข้าอบรม',
     'Vendor','สมัครอบรม','HBI','PR','อีเมลยืนยัน','ทำจ่าย','รอบทำจ่าย','ยื่น DSD','Remarks','สถานะล่าสุด',
-    'Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน','ใบเสร็จรับเงิน','Certificate'];
+    'ราคา/หัว ก่อน VAT','รวมก่อน VAT','VAT 7%','หัก ณ ที่จ่าย','ยอดชำระสุทธิ','เลขที่ Invoice','ครบกำหนดชำระ','Invoice','ใบสมัคร','รายละเอียดหลักสูตร','หลักฐานการชำระเงิน','ใบเสร็จรับเงิน','Certificate'];
   const stepCell=(c,k)=>c.steps[k]?`${c.stepTs[k]||'✓'}${(c.stepBy||{})[k]?' ('+c.stepBy[k]+')':''}`:'';
   const rows=[...data.courses].sort((a,b)=>a.no-b.no).map(c=>[
     c.no,c.name,c.cat||'',c.vendorName,c.start,c.end,c.count,(c.people||'').split('\n').filter(Boolean).join('; '),
-    VTXT[c.vendor]||'',...['register','hbi','pr','email','payment'].map(k=>stepCell(c,k)),
+    VTXT[c.vendor]||'',...['register','hbi'].map(k=>stepCell(c,k)),PRTXT[c.pr]||'',...['email','payment'].map(k=>stepCell(c,k)),
     c.payRound||'',stepCell(c,'dsd'),
     Object.entries(c.stepRemark||{}).filter(([,v])=>v).map(([k,v])=>`${(STEPS.find(x=>x.k===k)||{}).nm||k}: ${v}`).join(' | '),
     lastStatus(c).t,
+    ...(()=>{const r2=x=>Math.round(x*100)/100;const p=c.price||0,n=c.count||1,sub=r2(p*n),vat=c.vatOn!==false?r2(sub*0.07):0,wh=r2(sub*(c.whtPct||0)/100);
+      return p?[p,sub,vat,wh,r2(sub+vat-wh)]:['','','','',''];})(),
+    c.invoiceNo||'',c.invoiceDue||'',
     c.docs.invoice||'',c.docs.app||'',c.docs.detail||'',c.docs.payproof||'',c.docs.receipt||'',(c.docs.cert||[]).join('; ')
   ].map(q).join(','));
   const csv='\uFEFF'+head.map(q).join(',')+'\n'+rows.join('\n');
